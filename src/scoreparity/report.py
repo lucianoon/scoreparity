@@ -49,7 +49,7 @@ class Report:
 
     @property
     def failed_gates(self) -> list[str]:
-        return [g.name for g in self.gates if not g.passed]
+        return [g.label for g in self.gates if not g.passed]
 
     def to_dict(self) -> dict[str, Any]:
         doc: dict[str, Any] = _clean(
@@ -116,27 +116,13 @@ def _cell(value: Any) -> str:
     return _code(text).replace("|", r"\|") if text != "" else "(empty)"
 
 
-def render_markdown(doc: dict[str, Any]) -> str:
-    """Markdown suited to a pull-request comment or a CI job summary."""
-    icon = "✅" if doc["verdict"] == "PASS" else "❌"
-    s = doc["summary"]
-    lines = [
-        f"## {icon} Score parity: **{doc['verdict']}**",
-        "",
-        f"{s['n_matched_finite']:,} rows compared "
-        f"(reference {s['n_reference']:,}, candidate {s['n_candidate']:,}, "
-        f"missing {s['n_missing']:,}, extra {s['n_extra']:,}).",
-        "",
-        "| Gate | Result | Value | Threshold | What it checks |",
-        "|---|---|---|---|---|",
-    ]
-    for g in doc["gates"]:
-        ci = g["details"].get("ci")
-        value = _fmt(g["value"]) + (f" (CI {_fmt(ci[0])} to {_fmt(ci[1])})" if ci else "")
-        lines.append(
-            f"| `{g['name']}` | {'pass' if g['passed'] else '**FAIL**'} | {value} | "
-            f"{_fmt(g['threshold'])} | {g['description']} |"
-        )
+def gate_name(g: dict[str, Any]) -> str:
+    """Display name of a gate in a report document: `field.gate` for structured fields."""
+    return f"{g['field']}.{g['name']}" if g.get("field") else str(g["name"])
+
+
+def _summary_lines(s: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
     quantiles = s.get("abs_diff_quantiles")
     if quantiles:
         lines += [
@@ -187,8 +173,22 @@ def render_markdown(doc: dict[str, Any]) -> str:
             f"Answers outside the allowed classes: reference {100 * invalid['reference']:.3f}%, "
             f"candidate {100 * invalid['candidate']:.3f}%.",
         ]
-    for g in doc["gates"]:
-        details = g["details"]
+    valid = s.get("schema_valid")
+    if valid:
+        lines += [
+            "",
+            f"Valid documents: reference {100 * valid['reference']:.3f}%, "
+            f"candidate {100 * valid['candidate']:.3f}%.",
+        ]
+    return lines
+
+
+def _hint_lines(gates: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    events = {"label_agreement": "disagreement", "invalid_rate": "invalid answer"}
+    count_key = {"label_agreement": "disagreements", "invalid_rate": "candidate_invalid"}
+    for g in gates:
+        details, name = g["details"], _code(gate_name(g))
         for key, what in (
             ("failing_segments", "Segments failing"),
             ("failing_classes", "Classes failing"),
@@ -198,17 +198,15 @@ def render_markdown(doc: dict[str, Any]) -> str:
             if items:
                 shown = ", ".join(_code(x) for x in items[:20])
                 more = f" (+{len(items) - 20} more)" if len(items) > 20 else ""
-                lines += ["", f"{what} `{g['name']}`: {shown}{more}"]
+                lines += ["", f"{what} {name}: {shown}{more}"]
         if not g["passed"] and details.get("underpowered_classes"):
             lines += [
                 "",
-                f"`{g['name']}`: not enough rows to verify the threshold for "
+                f"{name}: not enough rows to verify the threshold for "
                 + ", ".join(_code(x) for x in details["underpowered_classes"][:20])
                 + f" (each needs at least {details['rows_needed_per_class']} rows; collect more "
                 "rows or raise `min_class_size` to exclude them deliberately).",
             ]
-        events = {"label_agreement": "disagreement", "invalid_rate": "invalid answer"}
-        count_key = {"label_agreement": "disagreements", "invalid_rate": "candidate_invalid"}
         if (
             g["name"] in events
             and not g["passed"]
@@ -217,25 +215,61 @@ def render_markdown(doc: dict[str, Any]) -> str:
         ):
             lines += [
                 "",
-                f"`{g['name']}`: no {events[g['name']]} observed, but {details['rows']} rows "
+                f"{name}: no {events[g['name']]} observed, but {details['rows']} rows "
                 f"cannot prove the threshold; at least {details['rows_needed']} rows are needed "
                 "(`scoreparity plan-sample` sizes a sample before scoring it).",
             ]
+    return lines
+
+
+def _example_lines(s: dict[str, Any]) -> list[str]:
     examples = s.get("examples")
-    if examples:
-        shown = examples[:MARKDOWN_EXAMPLES]
-        extra = "difference" if "difference" in shown[0] else None
-        lines += [
-            "",
-            f"Examples by id ({len(shown)} of {len(examples)} listed in the report):",
-            "",
-            "| id | reference | candidate |" + (" difference |" if extra else ""),
-            "|---|---|---|" + ("---|" if extra else ""),
-        ]
-        for e in shown:
-            lines.append(
-                f"| {_cell(e['id'])} | {_cell(e['reference'])} | {_cell(e['candidate'])} |"
-                + (f" {_fmt(e[extra])} |" if extra else "")
-            )
+    if not examples:
+        return []
+    shown = examples[:MARKDOWN_EXAMPLES]
+    extra = "difference" if "difference" in shown[0] else None
+    lines = [
+        "",
+        f"Examples by id ({len(shown)} of {len(examples)} listed in the report):",
+        "",
+        "| id | reference | candidate |" + (" difference |" if extra else ""),
+        "|---|---|---|" + ("---|" if extra else ""),
+    ]
+    for e in shown:
+        lines.append(
+            f"| {_cell(e['id'])} | {_cell(e['reference'])} | {_cell(e['candidate'])} |"
+            + (f" {_fmt(e[extra])} |" if extra else "")
+        )
+    return lines
+
+
+def render_markdown(doc: dict[str, Any]) -> str:
+    """Markdown suited to a pull-request comment or a CI job summary."""
+    icon = "✅" if doc["verdict"] == "PASS" else "❌"
+    s = doc["summary"]
+    lines = [
+        f"## {icon} Score parity: **{doc['verdict']}**",
+        "",
+        f"{s['n_matched_finite']:,} rows compared "
+        f"(reference {s['n_reference']:,}, candidate {s['n_candidate']:,}, "
+        f"missing {s['n_missing']:,}, extra {s['n_extra']:,}).",
+        "",
+        "| Gate | Result | Value | Threshold | What it checks |",
+        "|---|---|---|---|---|",
+    ]
+    for g in doc["gates"]:
+        ci = g["details"].get("ci")
+        value = _fmt(g["value"]) + (f" (CI {_fmt(ci[0])} to {_fmt(ci[1])})" if ci else "")
+        lines.append(
+            f"| {_cell(gate_name(g))} | {'pass' if g['passed'] else '**FAIL**'} | {value} | "
+            f"{_fmt(g['threshold'])} | {g['description']} |"
+        )
+    lines += _summary_lines(s)
+    lines += _hint_lines(doc["gates"])
+    lines += _example_lines(s)
+    for name, sub in (s.get("fields") or {}).items():
+        lines += ["", f"### Field {_code(name)} ({sub.get('type', '')})"]
+        lines += _summary_lines(sub) or ["", "No rows to summarise."]
+        lines += _example_lines(sub)
     lines += ["", f"<sub>scoreparity {doc['environment']['scoreparity']}</sub>"]
     return "\n".join(lines) + "\n"

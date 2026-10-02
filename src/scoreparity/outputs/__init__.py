@@ -39,11 +39,13 @@ def get_output_kind(name: str) -> OutputKind:
     from scoreparity.outputs.labels import LabelsOutput
     from scoreparity.outputs.probabilities import ProbabilitiesOutput
     from scoreparity.outputs.score import ScoreOutput
+    from scoreparity.outputs.structured import StructuredOutput
 
     kinds: dict[str, OutputKind] = {
         "score": ScoreOutput(),
         "label": LabelOutput(),
         "probabilities": ProbabilitiesOutput(),
         "labels": LabelsOutput(),
+        "structured": StructuredOutput(),
     }
     return kinds[name]

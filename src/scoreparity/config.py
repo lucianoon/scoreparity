@@ -44,7 +44,8 @@ class Columns:
 
 # Kinds of model output a comparison can handle. Each kind has its own alignment rules and
 # its own set of applicable gates (see SUPPORTED_GATES below).
-OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities", "labels")
+OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities", "labels", "structured")
+FIELD_TYPES: tuple[str, ...] = ("score", "label", "labels")
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,9 @@ class Output:
     - label: one predicted class per row (same columns, holding class names);
     - probabilities: one probability column per class, named `<prob_prefix><class>`;
     - labels: a set of classes per row (multi-label), as text separated by `label_separator`
-      or as a list (for example a Parquet list column). An empty cell is the empty set.
+      or as a list (for example a Parquet list column). An empty cell is the empty set;
+    - structured: one JSON object per row (text, or a dict such as a Parquet struct), with
+      `fields` declaring how each field is compared.
     """
 
     type: str = "score"
@@ -83,6 +86,7 @@ class Output:
     prob_sum_tolerance: float = 1e-3
     normalize: Normalize | None = None
     label_separator: str = "|"
+    fields: dict[str, Field] = field(default_factory=dict)  # structured outputs only
 
 
 @dataclass(frozen=True)
@@ -201,6 +205,14 @@ class StabilityGate:
 
 
 @dataclass(frozen=True)
+class SchemaValidRateGate:
+    """Structured outputs: share of candidate rows that are not a valid document (not JSON, not
+    an object, or a required field missing); its one-sided upper bound must be <= max."""
+
+    max: float
+
+
+@dataclass(frozen=True)
 class TvDistanceGate:
     """Total variation distance between the probability vectors of each row (quantile q)."""
 
@@ -226,6 +238,27 @@ class Gates:
     tv_distance: TvDistanceGate | None = None
     invalid_rate: InvalidRateGate | None = None
     stability: StabilityGate | None = None
+    schema_valid_rate: SchemaValidRateGate | None = None
+
+
+def _field_gates() -> Gates:
+    return Gates(coverage=None)  # coverage is checked once, for whole rows
+
+
+@dataclass(frozen=True)
+class Field:
+    """One field of a structured output, compared like an output of its `type`.
+
+    `required` fields must be present (not null) for a row to be a valid document. `truth` is a
+    column (in the reference or context table) with the field's ground truth.
+    """
+
+    type: str = "label"
+    required: bool = True
+    normalize: Normalize | None = None
+    label_separator: str = "|"
+    truth: str | None = None
+    gates: Gates = field(default_factory=_field_gates)
 
 
 MAX_EXAMPLES = 1000
@@ -269,6 +302,7 @@ _GATE_TYPES: dict[str, type[Any]] = {
     "tv_distance": TvDistanceGate,
     "invalid_rate": InvalidRateGate,
     "stability": StabilityGate,
+    "schema_valid_rate": SchemaValidRateGate,
 }
 
 _SCORE_GATES = frozenset(
@@ -319,6 +353,8 @@ SUPPORTED_GATES: dict[str, frozenset[str]] = {
             "quality_difference",
         }
     ),
+    # Field gates live in output.fields.<name>.gates; the top level only has these.
+    "structured": frozenset({"coverage", "nonfinite", "schema_valid_rate"}),
 }
 
 T = TypeVar("T")
@@ -491,12 +527,57 @@ def _validate(cfg: ParityConfig) -> None:
     if g.stability:
         require(g.stability.margin > 0, "gates.stability.margin must be > 0")
         require(cfg.columns.replica is not None, "gates.stability requires columns.replica")
+    if g.schema_valid_rate:
+        require(0 <= g.schema_valid_rate.max <= 1, "gates.schema_valid_rate.max must be in [0, 1]")
+    if cfg.output.type == "structured":
+        _validate_fields(cfg, require)
+    else:
+        require(not cfg.output.fields, "output.fields applies to output.type 'structured' only")
     if g.invalid_rate:
         require(0 <= g.invalid_rate.max <= 1, "gates.invalid_rate.max must be in [0, 1]")
         require(
             norm is not None and bool(norm.allowed),
             "gates.invalid_rate requires output.normalize.allowed (the list of valid classes)",
         )
+
+
+FIELD_COLUMN = "__field_value"
+
+
+def field_config(cfg: ParityConfig, name: str) -> ParityConfig:
+    """The configuration a structured field is compared with, as an output of its own type."""
+    spec = cfg.output.fields[name]
+    return ParityConfig(
+        columns=Columns(id=cfg.columns.id, score=FIELD_COLUMN, truth=spec.truth),
+        segments=cfg.segments,
+        alpha=cfg.alpha,
+        min_segment_size=cfg.min_segment_size,
+        gates=spec.gates,
+        output=Output(
+            type=spec.type, normalize=spec.normalize, label_separator=spec.label_separator
+        ),
+        min_class_size=cfg.min_class_size,
+        examples=cfg.examples,
+    )
+
+
+def _validate_fields(cfg: ParityConfig, require: Any) -> None:
+    fields = cfg.output.fields
+    require(bool(fields), "output.fields must declare at least one field")
+    for name, spec in fields.items():
+        where = f"output.fields.{name}"
+        require(name.strip() != "", "output.fields has an empty field name")
+        require(spec.type in FIELD_TYPES, f"{where}.type must be one of {list(FIELD_TYPES)}")
+        require(spec.gates.coverage is None, f"{where}: coverage is a top-level gate")
+        require(
+            spec.gates.auc_difference is None,
+            f"{where}: auc_difference is not supported for fields",
+        )
+        require(spec.gates.stability is None, f"{where}: stability is not supported for fields")
+        try:
+            field_config(cfg, name)
+        except ConfigError as exc:
+            raise ConfigError(f"{where}: {exc}") from None
 
 
 def _validate_normalize(norm: Normalize, where: str, require: Any) -> None:
@@ -533,7 +614,7 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
     output = _build_output(raw.get("output") or {})
     gate_raw: dict[str, Any] = {}
     if preset:
-        if output.type in ("label", "labels"):
+        if output.type in ("label", "labels", "structured"):
             raise ConfigError(
                 "presets define score tolerances and do not apply to output.type "
                 f"{output.type!r}; configure the class gates explicitly"
@@ -577,10 +658,52 @@ def _build_output(raw: Any) -> Output:
         raise ConfigError(f"output: expected a mapping, got {type(raw).__name__}")
     raw = dict(raw)
     normalize = raw.pop("normalize", None)
+    fields = raw.pop("fields", None) or {}
+    if not isinstance(fields, Mapping):
+        raise ConfigError("output.fields: expected a mapping of field name to settings")
     output = _build(Output, raw, "output")
-    if normalize is None:
-        return output
-    return dataclasses.replace(output, normalize=_build(Normalize, normalize, "output.normalize"))
+    if normalize is not None:
+        output = dataclasses.replace(
+            output, normalize=_build(Normalize, normalize, "output.normalize")
+        )
+    if fields:
+        output = dataclasses.replace(
+            output,
+            fields={str(k): _build_field(v, f"output.fields.{k}") for k, v in fields.items()},
+        )
+    return output
+
+
+def _build_gates(raw: Any, where: str, base: dict[str, Any]) -> Gates:
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"{where}: expected a mapping")
+    unknown = sorted(set(raw) - set(_GATE_TYPES))
+    if unknown:
+        raise ConfigError(
+            f"{where}: unknown gates {unknown}; valid gates are {sorted(_GATE_TYPES)}"
+        )
+    values = dict(base)
+    values.update(raw)  # null disables a default gate
+    return Gates(
+        **{
+            name: None if value is None else _build(_GATE_TYPES[name], value, f"{where}.{name}")
+            for name, value in values.items()
+        }
+    )
+
+
+def _build_field(raw: Any, where: str) -> Field:
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"{where}: expected a mapping, got {type(raw).__name__}")
+    raw = dict(raw)
+    normalize = raw.pop("normalize", None)
+    gates = _build_gates(raw.pop("gates", None) or {}, f"{where}.gates", {"coverage": None})
+    spec = _build(Field, raw, where)
+    return dataclasses.replace(
+        spec,
+        gates=gates,
+        normalize=None if normalize is None else _build(Normalize, normalize, f"{where}.normalize"),
+    )
 
 
 def load(path: str | Path) -> ParityConfig:

@@ -60,7 +60,8 @@
               "quality_difference",
               "tv_distance",
               "invalid_rate",
-              "stability"
+              "stability",
+              "schema_valid_rate"
             ]
           },
           "passed": {
@@ -83,6 +84,10 @@
           },
           "details": {
             "type": "object"
+          },
+          "field": {
+            "type": "string",
+            "description": "structured outputs: the field the gate checked"
           }
         }
       }
@@ -386,6 +391,43 @@
               "added": {
                 "type": "integer",
                 "minimum": 0
+              }
+            }
+          }
+        },
+        "schema_valid": {
+          "type": "object",
+          "required": [
+            "reference",
+            "candidate"
+          ],
+          "properties": {
+            "reference": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "candidate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "score",
+                  "label",
+                  "labels"
+                ]
               }
             }
           }

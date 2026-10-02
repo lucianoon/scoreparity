@@ -25,9 +25,15 @@ class GateResult:
     threshold: float | None
     description: str
     details: dict[str, Any] = field(default_factory=dict)
+    field: str | None = None  # structured outputs: the field this gate checked
+
+    @property
+    def label(self) -> str:
+        """Unique name in a report: `field.gate` for structured fields, else the gate name."""
+        return f"{self.field}.{self.name}" if self.field else self.name
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        doc = {
             "name": self.name,
             "passed": self.passed,
             "value": self.value,
@@ -35,6 +41,9 @@ class GateResult:
             "description": self.description,
             "details": self.details,
         }
+        if self.field is not None:
+            doc["field"] = self.field
+        return doc
 
 
 def _unverifiable(name: str, threshold: float | None, why: str) -> GateResult:
