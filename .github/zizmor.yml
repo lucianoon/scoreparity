@@ -1,0 +1,7 @@
+# zizmor configuration (workflow security linter, run in CI).
+rules:
+  # The self-test intentionally runs the action from the checked-out working tree with `./`,
+  # the documented syntax for local actions; the suggested `$/` form is a convenience, not a
+  # security fix.
+  self-repository:
+    disable: true

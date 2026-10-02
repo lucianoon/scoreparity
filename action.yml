@@ -63,7 +63,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-python@v7
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -114,7 +114,7 @@ runs:
 
     - name: Upload reports
       if: always() && steps.compare.outputs.verdict != ''
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ steps.compare.outputs.report-dir }}
