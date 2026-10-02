@@ -68,6 +68,7 @@ packages = ["src/scoreparity"]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 xfail_strict = true
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["scoreparity"]
