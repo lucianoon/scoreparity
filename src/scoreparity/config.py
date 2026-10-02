@@ -40,6 +40,18 @@ class Columns:
         return self.candidate_score or self.score
 
 
+# Kinds of model output a comparison can handle. Each kind has its own alignment rules and
+# its own set of applicable gates (see SUPPORTED_GATES below).
+OUTPUT_TYPES: tuple[str, ...] = ("score",)
+
+
+@dataclass(frozen=True)
+class Output:
+    """What each row of the score tables holds."""
+
+    type: str = "score"
+
+
 @dataclass(frozen=True)
 class CoverageGate:
     """Share of reference ids that must also be present in the candidate."""
@@ -120,6 +132,7 @@ class ParityConfig:
     min_segment_size: int = 30
     gates: Gates = field(default_factory=Gates)
     preset: str | None = None
+    output: Output = field(default_factory=Output)
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -137,6 +150,12 @@ _GATE_TYPES: dict[str, type[Any]] = {
     "decision_flips": DecisionFlipsGate,
     "top_k_overlap": TopKOverlapGate,
     "auc_difference": AucDifferenceGate,
+}
+
+# Which gates make sense for each output type. A gate configured for an output type that does
+# not support it is a configuration error, never silently ignored.
+SUPPORTED_GATES: dict[str, frozenset[str]] = {
+    "score": frozenset(_GATE_TYPES),
 }
 
 T = TypeVar("T")
@@ -199,7 +218,18 @@ def _validate(cfg: ParityConfig) -> None:
     require(0 < cfg.alpha < 0.5, f"alpha must be in (0, 0.5), got {cfg.alpha}")
     require(cfg.min_segment_size >= 2, "min_segment_size must be >= 2")
     require(len(set(cfg.segments)) == len(cfg.segments), "segments has duplicates")
+    require(
+        cfg.output.type in OUTPUT_TYPES,
+        f"output.type must be one of {list(OUTPUT_TYPES)}, got {cfg.output.type!r}",
+    )
     g = cfg.gates
+    enabled = {name for name in _GATE_TYPES if getattr(g, name) is not None}
+    unsupported = sorted(enabled - SUPPORTED_GATES[cfg.output.type])
+    require(
+        not unsupported,
+        f"gates {unsupported} do not apply to output.type {cfg.output.type!r}; "
+        f"applicable gates are {sorted(SUPPORTED_GATES[cfg.output.type])}",
+    )
     if g.coverage:
         require(0 < g.coverage.min <= 1, "gates.coverage.min must be in (0, 1]")
     if g.nonfinite:
@@ -274,6 +304,7 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
         min_segment_size=_coerce(raw.get("min_segment_size", 30), "int", "min_segment_size"),
         gates=gates,
         preset=preset,
+        output=_build(Output, raw.get("output") or {}, "output"),
     )
 
 

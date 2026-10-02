@@ -1,0 +1,586 @@
+{
+ "_generated_with": "0.1.0",
+ "broken": {
+  "failed_gates": [
+   "coverage"
+  ],
+  "gates": [
+   {
+    "description": "share of reference ids present in the candidate",
+    "details": {
+     "extra": 0,
+     "extra_examples": [],
+     "missing": 20,
+     "missing_examples": [
+      "r00000",
+      "r00001",
+      "r00002",
+      "r00003",
+      "r00004"
+     ]
+    },
+    "name": "coverage",
+    "passed": false,
+    "threshold": 1.0,
+    "value": 0.9933333333333333
+   },
+   {
+    "description": "rows where exactly one version produced NaN/inf",
+    "details": {
+     "both_nonfinite": 0
+    },
+    "name": "nonfinite",
+    "passed": true,
+    "threshold": 0.0,
+    "value": 0.0
+   },
+   {
+    "description": "largest absolute score difference",
+    "details": {
+     "worst_row": {
+      "candidate": 0.23812350145823272,
+      "reference": 0.23812350145823272
+     }
+    },
+    "name": "max_abs_diff",
+    "passed": true,
+    "threshold": 1e-05,
+    "value": 0.0
+   },
+   {
+    "description": "q0.99 of the absolute score difference",
+    "details": {
+     "q": 0.99
+    },
+    "name": "quantile_abs_diff",
+    "passed": true,
+    "threshold": 1e-06,
+    "value": 0.0
+   },
+   {
+    "description": "TOST: 90% CI of the mean difference within \u00b1margin, in every segment",
+    "details": {
+     "ci": [
+      0.0,
+      0.0
+     ],
+     "failing_segments": [],
+     "p_value": 0.0,
+     "segments": [
+      {
+       "ci": [
+        0.0,
+        0.0
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 0.0,
+       "n": 983,
+       "segment": "plan=a"
+      },
+      {
+       "ci": [
+        0.0,
+        0.0
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 0.0,
+       "n": 1011,
+       "segment": "plan=b"
+      },
+      {
+       "ci": [
+        0.0,
+        0.0
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 0.0,
+       "n": 986,
+       "segment": "plan=c"
+      }
+     ]
+    },
+    "name": "mean_diff_equivalence",
+    "passed": true,
+    "threshold": 1e-06,
+    "value": 0.0
+   },
+   {
+    "description": "share of rows on a different side of a decision threshold (worst threshold)",
+    "details": {
+     "thresholds": {
+      "0.5": {
+       "count": 0,
+       "rate": 0.0
+      }
+     }
+    },
+    "name": "decision_flips",
+    "passed": true,
+    "threshold": 0.0001,
+    "value": 0.0
+   },
+   {
+    "description": "overlap of the top-k% rows ranked by each version (worst k)",
+    "details": {
+     "k": {
+      "10%": {
+       "k": 298,
+       "overlap": 1.0
+      }
+     }
+    },
+    "name": "top_k_overlap",
+    "passed": true,
+    "threshold": 0.999,
+    "value": 1.0
+   },
+   {
+    "description": "paired DeLong 90% CI of AUC(candidate) - AUC(reference) within \u00b1margin",
+    "details": {
+     "auc_candidate": 0.7885478856235634,
+     "auc_reference": 0.7885478856235634,
+     "ci": [
+      0.0,
+      0.0
+     ],
+     "n_negative": 2024,
+     "n_positive": 956
+    },
+    "name": "auc_difference",
+    "passed": true,
+    "threshold": 0.001,
+    "value": 0.0
+   }
+  ],
+  "schema_version": 1,
+  "summary": {
+   "abs_diff_histogram": {
+    "decades": [],
+    "zero": 2980
+   },
+   "abs_diff_quantiles": {
+    "0.5": 0.0,
+    "0.9": 0.0,
+    "0.99": 0.0,
+    "0.999": 0.0,
+    "1.0": 0.0
+   },
+   "auc": {
+    "candidate": 0.7885478856235634,
+    "delta": 0.0,
+    "delta_ci90": [
+     0.0,
+     0.0
+    ],
+    "reference": 0.7885478856235634
+   },
+   "identical_share": 1.0,
+   "mean_diff": 0.0,
+   "n_candidate": 2980,
+   "n_extra": 0,
+   "n_matched_finite": 2980,
+   "n_missing": 20,
+   "n_nonfinite_both": 0,
+   "n_nonfinite_mismatch": 0,
+   "n_reference": 3000,
+   "spearman": 1.0
+  },
+  "verdict": "FAIL"
+ },
+ "drift": {
+  "failed_gates": [
+   "max_abs_diff",
+   "quantile_abs_diff",
+   "mean_diff_equivalence",
+   "top_k_overlap"
+  ],
+  "gates": [
+   {
+    "description": "share of reference ids present in the candidate",
+    "details": {
+     "extra": 0,
+     "extra_examples": [],
+     "missing": 0,
+     "missing_examples": []
+    },
+    "name": "coverage",
+    "passed": true,
+    "threshold": 1.0,
+    "value": 1.0
+   },
+   {
+    "description": "rows where exactly one version produced NaN/inf",
+    "details": {
+     "both_nonfinite": 0
+    },
+    "name": "nonfinite",
+    "passed": true,
+    "threshold": 0.0,
+    "value": 0.0
+   },
+   {
+    "description": "largest absolute score difference",
+    "details": {
+     "worst_row": {
+      "candidate": 0.4474395077195075,
+      "reference": 0.4454395077195075
+     }
+    },
+    "name": "max_abs_diff",
+    "passed": false,
+    "threshold": 1e-05,
+    "value": 0.0020000000000000018
+   },
+   {
+    "description": "q0.99 of the absolute score difference",
+    "details": {
+     "q": 0.99
+    },
+    "name": "quantile_abs_diff",
+    "passed": false,
+    "threshold": 1e-06,
+    "value": 0.0020000000000000018
+   },
+   {
+    "description": "TOST: 90% CI of the mean difference within \u00b1margin, in every segment",
+    "details": {
+     "ci": [
+      0.0006330637355817929,
+      0.0006896029310848749
+     ],
+     "failing_segments": [
+      "plan=c"
+     ],
+     "p_value": 1.0,
+     "segments": [
+      {
+       "ci": [
+        0.0,
+        0.0
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 0.0,
+       "n": 989,
+       "segment": "plan=a"
+      },
+      {
+       "ci": [
+        0.0,
+        0.0
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 0.0,
+       "n": 1019,
+       "segment": "plan=b"
+      },
+      {
+       "ci": [
+        0.0020000000000000018,
+        0.0020000000000000018
+       ],
+       "equivalent": false,
+       "gated": true,
+       "mean_diff": 0.0020000000000000018,
+       "n": 992,
+       "segment": "plan=c"
+      }
+     ]
+    },
+    "name": "mean_diff_equivalence",
+    "passed": false,
+    "threshold": 1e-06,
+    "value": 0.0006613333333333339
+   },
+   {
+    "description": "share of rows on a different side of a decision threshold (worst threshold)",
+    "details": {
+     "thresholds": {
+      "0.5": {
+       "count": 0,
+       "rate": 0.0
+      }
+     }
+    },
+    "name": "decision_flips",
+    "passed": true,
+    "threshold": 0.0001,
+    "value": 0.0
+   },
+   {
+    "description": "overlap of the top-k% rows ranked by each version (worst k)",
+    "details": {
+     "k": {
+      "10%": {
+       "k": 300,
+       "overlap": 0.9966666666666667
+      }
+     }
+    },
+    "name": "top_k_overlap",
+    "passed": false,
+    "threshold": 0.999,
+    "value": 0.9966666666666667
+   },
+   {
+    "description": "paired DeLong 90% CI of AUC(candidate) - AUC(reference) within \u00b1margin",
+    "details": {
+     "auc_candidate": 0.7880630964743114,
+     "auc_reference": 0.7881523079519033,
+     "ci": [
+      -0.00017413510047267533,
+      -4.287854711101477e-06
+     ],
+     "n_negative": 2037,
+     "n_positive": 963
+    },
+    "name": "auc_difference",
+    "passed": true,
+    "threshold": 0.001,
+    "value": -8.921147759188841e-05
+   }
+  ],
+  "schema_version": 1,
+  "summary": {
+   "abs_diff_histogram": {
+    "decades": [
+     {
+      "count": 992,
+      "exponent": -3
+     }
+    ],
+    "zero": 2008
+   },
+   "abs_diff_quantiles": {
+    "0.5": 0.0,
+    "0.9": 0.0020000000000000018,
+    "0.99": 0.0020000000000000018,
+    "0.999": 0.0020000000000000018,
+    "1.0": 0.0020000000000000018
+   },
+   "auc": {
+    "candidate": 0.7880630964743114,
+    "delta": -8.921147759188841e-05,
+    "delta_ci90": [
+     -0.00017413510047267533,
+     -4.287854711101477e-06
+    ],
+    "reference": 0.7881523079519033
+   },
+   "identical_share": 0.6693333333333333,
+   "mean_diff": 0.0006613333333333339,
+   "n_candidate": 3000,
+   "n_extra": 0,
+   "n_matched_finite": 3000,
+   "n_missing": 0,
+   "n_nonfinite_both": 0,
+   "n_nonfinite_mismatch": 0,
+   "n_reference": 3000,
+   "spearman": 0.9999888479987608
+  },
+  "verdict": "FAIL"
+ },
+ "noise": {
+  "failed_gates": [],
+  "gates": [
+   {
+    "description": "share of reference ids present in the candidate",
+    "details": {
+     "extra": 0,
+     "extra_examples": [],
+     "missing": 0,
+     "missing_examples": []
+    },
+    "name": "coverage",
+    "passed": true,
+    "threshold": 1.0,
+    "value": 1.0
+   },
+   {
+    "description": "rows where exactly one version produced NaN/inf",
+    "details": {
+     "both_nonfinite": 0
+    },
+    "name": "nonfinite",
+    "passed": true,
+    "threshold": 0.0,
+    "value": 0.0
+   },
+   {
+    "description": "largest absolute score difference",
+    "details": {
+     "worst_row": {
+      "candidate": 0.2537166535200115,
+      "reference": 0.25371669201340813
+     }
+    },
+    "name": "max_abs_diff",
+    "passed": true,
+    "threshold": 1e-05,
+    "value": 3.84933966368628e-08
+   },
+   {
+    "description": "q0.99 of the absolute score difference",
+    "details": {
+     "q": 0.99
+    },
+    "name": "quantile_abs_diff",
+    "passed": true,
+    "threshold": 1e-06,
+    "value": 2.5920225132924912e-08
+   },
+   {
+    "description": "TOST: 90% CI of the mean difference within \u00b1margin, in every segment",
+    "details": {
+     "ci": [
+      -3.406424329455238e-11,
+      5.646382717706686e-10
+     ],
+     "failing_segments": [],
+     "p_value": 0.0,
+     "segments": [
+      {
+       "ci": [
+        -1.6159839911191558e-10,
+        8.531060989242561e-10
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 3.4575384990617027e-10,
+       "n": 989,
+       "segment": "plan=a"
+      },
+      {
+       "ci": [
+        -3.913155909263347e-10,
+        6.520179073424499e-10
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 1.303511582080576e-10,
+       "n": 1019,
+       "segment": "plan=b"
+      },
+      {
+       "ci": [
+        -2.036241816443444e-10,
+        8.509682440293469e-10
+       ],
+       "equivalent": true,
+       "gated": true,
+       "mean_diff": 3.236720311925013e-10,
+       "n": 992,
+       "segment": "plan=c"
+      }
+     ]
+    },
+    "name": "mean_diff_equivalence",
+    "passed": true,
+    "threshold": 1e-06,
+    "value": 2.652870142380581e-10
+   },
+   {
+    "description": "share of rows on a different side of a decision threshold (worst threshold)",
+    "details": {
+     "thresholds": {
+      "0.5": {
+       "count": 0,
+       "rate": 0.0
+      }
+     }
+    },
+    "name": "decision_flips",
+    "passed": true,
+    "threshold": 0.0001,
+    "value": 0.0
+   },
+   {
+    "description": "overlap of the top-k% rows ranked by each version (worst k)",
+    "details": {
+     "k": {
+      "10%": {
+       "k": 300,
+       "overlap": 1.0
+      }
+     }
+    },
+    "name": "top_k_overlap",
+    "passed": true,
+    "threshold": 0.999,
+    "value": 1.0
+   },
+   {
+    "description": "paired DeLong 90% CI of AUC(candidate) - AUC(reference) within \u00b1margin",
+    "details": {
+     "auc_candidate": 0.7881523079519033,
+     "auc_reference": 0.7881523079519033,
+     "ci": [
+      0.0,
+      0.0
+     ],
+     "n_negative": 2037,
+     "n_positive": 963
+    },
+    "name": "auc_difference",
+    "passed": true,
+    "threshold": 0.001,
+    "value": 0.0
+   }
+  ],
+  "schema_version": 1,
+  "summary": {
+   "abs_diff_histogram": {
+    "decades": [
+     {
+      "count": 25,
+      "exponent": -11
+     },
+     {
+      "count": 211,
+      "exponent": -10
+     },
+     {
+      "count": 1838,
+      "exponent": -9
+     },
+     {
+      "count": 926,
+      "exponent": -8
+     }
+    ],
+    "zero": 0
+   },
+   "abs_diff_quantiles": {
+    "0.5": 6.52087028818471e-09,
+    "0.9": 1.6689599036112668e-08,
+    "0.99": 2.5920225132924912e-08,
+    "0.999": 3.5517410901242386e-08,
+    "1.0": 3.84933966368628e-08
+   },
+   "auc": {
+    "candidate": 0.7881523079519033,
+    "delta": 0.0,
+    "delta_ci90": [
+     0.0,
+     0.0
+    ],
+    "reference": 0.7881523079519033
+   },
+   "identical_share": 0.0,
+   "mean_diff": 2.652870142380581e-10,
+   "n_candidate": 3000,
+   "n_extra": 0,
+   "n_matched_finite": 3000,
+   "n_missing": 0,
+   "n_nonfinite_both": 0,
+   "n_nonfinite_mismatch": 0,
+   "n_reference": 3000,
+   "spearman": 0.9999999999999999
+  },
+  "verdict": "PASS"
+ }
+}

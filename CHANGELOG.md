@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: comparisons dispatch on an output kind (, the default),
+  preparing support for other output types. No behaviour change: a golden test asserts that
+  reports match those produced by the released 0.1.0.
+
 ## [0.1.0] - 2026-10-02
 
 ### Security

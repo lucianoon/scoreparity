@@ -76,3 +76,12 @@ def test_invalid_yaml(tmp_path: Path) -> None:
     path.write_text("gates: [unclosed")
     with pytest.raises(ConfigError, match="invalid YAML"):
         load(path)
+
+
+def test_output_type_defaults_to_score_and_is_validated() -> None:
+    assert from_dict({}).output.type == "score"
+    assert from_dict({"output": {"type": "score"}}).output.type == "score"
+    with pytest.raises(ConfigError, match=r"output\.type must be one of"):
+        from_dict({"output": {"type": "unknown"}})
+    with pytest.raises(ConfigError, match="unknown keys"):
+        from_dict({"output": {"kind": "score"}})
