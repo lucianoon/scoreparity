@@ -15,7 +15,7 @@ often by comparing an aggregate metric such as AUC. That is not enough:
 records and answers one question with sound statistics: *are they equivalent within the
 tolerance you declared up front?* It is model-agnostic: it only needs two tables of scores.
 
-> Status: 0.1 (alpha). The CLI exit codes and the JSON report schema (version 1) are stable
+> Status: 0.2 (alpha). The CLI exit codes and the JSON report schema (version 1) are stable
 > contracts; other APIs may change in minor releases until 1.0.
 
 ## Quick start
@@ -53,7 +53,7 @@ permissions:
 steps:
   - uses: actions/checkout@v7
   - run: python score.py --out candidate.parquet       # however you produce scores
-  - uses: lucianoon/scoreparity@v0.1.0                 # or pin the commit SHA
+  - uses: lucianoon/scoreparity@v0.2.0                 # or pin the commit SHA
     with:
       reference: baseline/scores.parquet
       candidate: candidate.parquet

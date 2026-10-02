@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-02
+
 ### Added
 
 - Class outputs: `output.type: label` (one predicted class per row) and
@@ -74,5 +76,6 @@ All notable changes to this project are documented here. The format follows
   CI on Linux, Windows and macOS for Python 3.10 to 3.13, minimum-dependency job and wheel
   smoke test.
 
-[Unreleased]: https://github.com/lucianoon/scoreparity/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lucianoon/scoreparity/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lucianoon/scoreparity/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucianoon/scoreparity/releases/tag/v0.1.0
