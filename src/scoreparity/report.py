@@ -153,6 +153,20 @@ def render_markdown(doc: dict[str, Any]) -> str:
             f"Class agreement: {100 * s['agreement']:.3f}% over {len(s.get('classes', []))} "
             f"classes; Cohen's kappa {_fmt(s.get('kappa'))}.",
         ]
+    stab = s.get("stability")
+    if stab:
+        on_unstable = stab.get("changes_on_unstable_ids")
+        lines += [
+            "",
+            "Ids whose replicas disagree: reference "
+            f"{100 * stab['reference']['unstable_share']:.2f}%, candidate "
+            f"{100 * stab['candidate']['unstable_share']:.2f}%"
+            + (
+                f"; {100 * on_unstable:.1f}% of the class changes are on such ids."
+                if on_unstable is not None
+                else "."
+            ),
+        ]
     invalid = s.get("invalid_share")
     if invalid:
         lines += [

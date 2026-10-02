@@ -201,6 +201,21 @@ It uses the exact binomial distribution of the gate's own decision rule and retu
 which every larger sample also reaches the requested power. For `transitions`, which are
 verified per class, pass `--class-share` (the share of the smallest class) to get the total.
 
+**LLMs disagree with themselves**, even at temperature 0. Two more features measure that:
+
+- **`scoreparity noise --output-type label`**: classify the same rows again with the
+  *reference* model (3+ runs) and let it write the class gates. Each gate starts from the worst
+  confidence bound over the reruns × `--safety` (default 1.75), and `transitions` gets one
+  limit per class (`per_class`), so a small or ambiguous class does not loosen the others. In
+  simulation, at least 97% of harmless reruns pass and moving 5% of a class to another always
+  fails. The noise floor is useful on its own: many teams do not know how unstable their
+  classifier is.
+- **Replicas** (`columns.replica`): several answers per id (one row per replica). Each version
+  is compared by its majority class, and the report shows how many ids are unstable in each
+  version and how many of the changes fall on them; changes concentrated on already unstable
+  ids point to sampling noise rather than to a new behaviour. The `stability` gate fails when
+  the candidate is less stable than the reference by more than a margin.
+
 ## Calibrated tolerances: `scoreparity noise`
 
 Guessing a margin is the weak spot of every equivalence test. Instead, score the **reference**

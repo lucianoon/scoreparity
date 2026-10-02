@@ -59,7 +59,8 @@
               "kappa",
               "quality_difference",
               "tv_distance",
-              "invalid_rate"
+              "invalid_rate",
+              "stability"
             ]
           },
           "passed": {
@@ -306,6 +307,61 @@
               "difference": {
                 "type": "number"
               }
+            }
+          }
+        },
+        "stability": {
+          "type": "object",
+          "required": [
+            "reference",
+            "candidate"
+          ],
+          "properties": {
+            "reference": {
+              "type": "object",
+              "required": [
+                "mean",
+                "unstable_share"
+              ],
+              "properties": {
+                "mean": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "unstable_share": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "candidate": {
+              "type": "object",
+              "required": [
+                "mean",
+                "unstable_share"
+              ],
+              "properties": {
+                "mean": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "unstable_share": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            },
+            "changes_on_unstable_ids": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 1
             }
           }
         }

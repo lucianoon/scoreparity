@@ -51,6 +51,26 @@ test suite checks the calibration by simulation: with three replicates and the d
 factor, 300 out of 300 fresh harmless reruns pass across noise levels from 1e-8 to 1e-5, while
 a shift of ten times the worst noise always fails.
 
+### Class labels (LLM classifiers)
+
+`scoreparity noise --output-type label` does the same for class outputs: rerun the reference
+classifier on the same rows (three or more times) and it suggests `label_agreement`,
+`transitions`, `class_prevalence`, `kappa` and, with `output.normalize.allowed`, `invalid_rate`.
+
+- The measured quantity is the unfavourable **confidence bound** each gate decides on, not the
+  point estimate, globally and in every gated segment or class. Because those bounds already
+  include the sampling uncertainty of a run of that size, the default safety factor is 1.75
+  rather than 3.
+- `transitions` gets **one limit per source class** (`per_class`). In a typical classifier a
+  small class receives stray answers from the big ones, so its rows move several times more
+  often than those of a big class; a single limit would be set by that class and hide real
+  changes elsewhere.
+- Calibration was chosen by simulation (five classes, 2,000 to 10,000 rows, 0.5% to 2% of the
+  answers resampled per run, three replicates): at least 97% of fresh reruns pass, and a
+  candidate that moves 5% of one class to another fails every time. Three times the noise is
+  caught about half of the time; `--safety 1.5` catches it more often, at the price of more
+  false alarms on reruns.
+
 ## 2. Ask what the business can absorb
 
 The noise floor says what is *detectable*; the use of the score says what *matters*. Check that

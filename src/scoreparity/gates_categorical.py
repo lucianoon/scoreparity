@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from scoreparity.align import CAND, REF, TRUTH, Alignment
+from scoreparity.align import CAND, CAND_STAB, REF, REF_STAB, TRUTH, Alignment
 from scoreparity.config import ParityConfig
 from scoreparity.gates import GateResult, _unverifiable
 from scoreparity.stats_categorical import (
@@ -128,6 +128,7 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                 n_i = int(cm[i].sum())
                 if n_i < cfg.min_class_size:
                     continue
+                limit = gate_t.per_class.get(src, gate_t.max_rate)
                 for j, dst in enumerate(classes):
                     if i == j:
                         continue
@@ -135,7 +136,7 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                     rate = count / n_i
                     upper = clopper_pearson(count, n_i, cfg.alpha)[1]
                     worst = max(worst, rate)
-                    if upper > gate_t.max_rate:
+                    if upper > limit:
                         label = f"{src} -> {dst}"
                         failing_pairs.append(label)
                         if count == 0:
@@ -159,7 +160,8 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                     worst,
                     gate_t.max_rate,
                     f"share of a class's rows that moved to each other class; {level} upper "
-                    "bound (classes with at least min_class_size rows)",
+                    "bound (classes with at least min_class_size rows"
+                    + (", some with their own limit)" if gate_t.per_class else ")"),
                     {
                         "failing_pairs": failing_pairs[:50],
                         "pairs": sorted(pairs, key=lambda p: -p["rate"])[:50],
@@ -300,7 +302,51 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                 )
             )
 
+    if g.stability:
+        gate_s = g.stability
+        if n == 0 or REF_STAB not in frame.columns:
+            results.append(_unverifiable("stability", gate_s.margin, "no matched rows"))
+        else:
+            r_unstable = frame[REF_STAB].to_numpy(np.float64) < 1
+            c_unstable = frame[CAND_STAB].to_numpy(np.float64) < 1
+            res = paired_proportion_difference(
+                int((r_unstable & c_unstable).sum()),
+                int((r_unstable & ~c_unstable).sum()),
+                int((~r_unstable & c_unstable).sum()),
+                int((~r_unstable & ~c_unstable).sum()),
+                cfg.alpha,
+            )
+            results.append(
+                GateResult(
+                    "stability",
+                    res.high < gate_s.margin,
+                    res.estimate,
+                    gate_s.margin,
+                    "share of ids whose replicas disagree, candidate minus reference; its "
+                    f"{level} upper bound must stay below the margin (Tango)",
+                    {
+                        "ci": [res.low, res.high],
+                        "reference_unstable": float(r_unstable.mean()),
+                        "candidate_unstable": float(c_unstable.mean()),
+                    },
+                )
+            )
+
     return results
+
+
+def stability_summary(frame: pd.DataFrame) -> dict[str, Any]:
+    """How often replicas of the same id disagree, per version, and where changes happen."""
+    ref, cand = frame[REF_STAB].to_numpy(np.float64), frame[CAND_STAB].to_numpy(np.float64)
+    changed = (frame[REF] != frame[CAND]).to_numpy()
+    unstable = (ref < 1) | (cand < 1)
+    return {
+        "reference": {"mean": float(ref.mean()), "unstable_share": float((ref < 1).mean())},
+        "candidate": {"mean": float(cand.mean()), "unstable_share": float((cand < 1).mean())},
+        # Changes concentrated on ids that were already unstable point to sampling noise, not
+        # to a different model behaviour.
+        "changes_on_unstable_ids": float(unstable[changed].mean()) if changed.any() else None,
+    }
 
 
 def examples(alignment: Alignment, cfg: ParityConfig) -> list[dict[str, Any]]:
@@ -354,6 +400,8 @@ def summary(alignment: Alignment, cfg: ParityConfig | None = None) -> dict[str, 
             for i, cls in enumerate(alignment.classes)
         }
         out["kappa"] = cohen_kappa(cm).kappa
+        if REF_STAB in frame.columns:
+            out["stability"] = stability_summary(frame)
         norm = cfg.output.normalize if cfg is not None else None
         if norm is not None and norm.allowed:
             out["invalid_share"] = {
