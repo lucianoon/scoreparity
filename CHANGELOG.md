@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `scoreparity noise`: measures the noise floor from replicate runs of the reference model and
+  writes a configuration whose tolerances cover it (worst noise × safety factor; discrete gates
+  never stricter than what the `max_abs_diff` tolerance allows). Generated YAML escapes user
+  data (file and column names).
+- JSON Schema for the report (`schema/report-v1.schema.json`), enforced by the test suite.
+- Documentation: `docs/choosing-tolerances.md`, `docs/integrations.md`.
 - Self-contained HTML report (`--html`): order-of-magnitude histogram of the differences and a
   per-segment confidence-interval chart, light and dark mode, all user data escaped.
 - JUnit XML report (`--junit`): one test case per gate.

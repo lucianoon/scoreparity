@@ -92,6 +92,39 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--markdown", metavar="PATH", help="write the Markdown report here")
     cmp.add_argument("--quiet", action="store_true", help="do not print the report to stdout")
 
+    noi = sub.add_parser(
+        "noise",
+        help="measure the noise floor from replicate runs and suggest tolerances",
+        description=(
+            "Score the SAME reference model again under conditions that should not matter "
+            "(another batch size, machine, thread count) and pass those files as replicates. "
+            "Writes a configuration whose tolerances cover the measured noise x --safety."
+        ),
+    )
+    noi.add_argument("--reference", required=True, help="reference scores (.csv or .parquet)")
+    noi.add_argument(
+        "--replicate",
+        action="append",
+        required=True,
+        metavar="PATH",
+        help="scores of a rerun of the reference model; repeat (3+ recommended)",
+    )
+    noi.add_argument("--context", help="optional table with labels/segments keyed by id")
+    noi.add_argument("--config", help="base config: columns, segments, alpha (gates are replaced)")
+    noi.add_argument("--id")
+    noi.add_argument("--score")
+    noi.add_argument("--reference-score")
+    noi.add_argument("--candidate-score", help="score column in the replicate tables")
+    noi.add_argument("--label")
+    noi.add_argument("--segment", action="append", default=None, metavar="COLUMN")
+    noi.add_argument("--safety", type=float, default=3.0, help="multiplier over the noise (>= 1)")
+    noi.add_argument("--q", type=float, default=0.99, help="quantile for quantile_abs_diff")
+    noi.add_argument("--threshold", action="append", type=float, help="decision threshold(s)")
+    noi.add_argument("--top-k", action="append", type=float, help="top-k percentage(s)")
+    noi.add_argument("--out", metavar="PATH", help="write the suggested YAML here (default stdout)")
+    noi.add_argument("--json", metavar="PATH", help="write the measured noise profile as JSON")
+    noi.add_argument("--force", action="store_true", help="overwrite --out if it exists")
+
     ren = sub.add_parser(
         "render",
         help="re-render a saved JSON report as Markdown, HTML or JUnit",
@@ -192,6 +225,45 @@ def _cmd_render(args: argparse.Namespace) -> int:
     return EXIT_PASS if doc["verdict"] == "PASS" else EXIT_FAIL
 
 
+def _cmd_noise(args: argparse.Namespace) -> int:
+    from scoreparity.compare import read_table
+    from scoreparity.noise import measure_noise, suggested_config_yaml
+
+    args.preset = None
+    base = _resolve_config(args)
+    if not 0 < args.q < 1:
+        raise InputError("--q must be in (0, 1)")
+    out = Path(args.out) if args.out else None
+    if out is not None and out.exists() and not args.force:
+        raise InputError(f"{out} already exists (use --force to overwrite)")
+    replicates = {}
+    for path in args.replicate:
+        name = Path(path).name if Path(path).name not in replicates else path
+        replicates[name] = read_table(path)
+    profile = measure_noise(
+        read_table(args.reference),
+        replicates,
+        base,
+        context=read_table(args.context) if args.context else None,
+        safety=args.safety,
+        q=args.q,
+        thresholds=tuple(args.threshold or [0.5]),
+        k_pct=tuple(args.top_k or [10.0]),
+    )
+    text = suggested_config_yaml(profile, base)
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(profile.to_dict(), indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        print(f"wrote {out}", file=sys.stderr)
+    else:
+        _write_stdout(text)
+    return EXIT_PASS
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     path = Path(args.path)
     if path.exists() and not args.force:
@@ -217,6 +289,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_compare(args)
         if args.command == "render":
             return _cmd_render(args)
+        if args.command == "noise":
+            return _cmd_noise(args)
         return _cmd_init(args)
     except ScoreParityError as exc:
         print(f"error: {exc}", file=sys.stderr)
