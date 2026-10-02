@@ -114,7 +114,11 @@ class ProbabilitiesOutput:
                     )
                 )
         results += gates_categorical.evaluate(alignment, cfg)
-        return results, self.summary(alignment)
+        out = self.summary(alignment)
+        if cfg.examples:
+            # Largest total variation distance first; reference/candidate are the argmax classes.
+            out["examples"] = gates.examples(alignment, cfg, _tv(alignment))
+        return results, out
 
     @staticmethod
     def summary(alignment: Alignment) -> dict[str, Any]:

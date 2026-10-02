@@ -47,6 +47,26 @@ OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities")
 
 
 @dataclass(frozen=True)
+class Normalize:
+    """How raw class labels (for example, LLM answers) are turned into classes.
+
+    Labels are always stripped. Then, in order: optional lowercasing, `map` (synonyms to a
+    canonical class; keys are matched after stripping and lowercasing) and, when `allowed` is
+    set, every label outside it (including empty answers, refusals and malformed output)
+    becomes the `invalid` class.
+    """
+
+    lowercase: bool = False
+    map: dict[str, str] = field(default_factory=dict)
+    allowed: tuple[str, ...] = ()
+    invalid: str = "__invalid__"
+
+    def key(self, label: str) -> str:
+        label = label.strip()
+        return label.lower() if self.lowercase else label
+
+
+@dataclass(frozen=True)
 class Output:
     """What each row of the tables holds.
 
@@ -58,6 +78,7 @@ class Output:
     type: str = "score"
     prob_prefix: str = "p_"
     prob_sum_tolerance: float = 1e-3
+    normalize: Normalize | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +178,13 @@ class QualityDifferenceGate:
 
 
 @dataclass(frozen=True)
+class InvalidRateGate:
+    """Share of candidate rows in the invalid class; its one-sided upper bound must be <= max."""
+
+    max: float
+
+
+@dataclass(frozen=True)
 class TvDistanceGate:
     """Total variation distance between the probability vectors of each row (quantile q)."""
 
@@ -180,6 +208,10 @@ class Gates:
     kappa: KappaGate | None = None
     quality_difference: QualityDifferenceGate | None = None
     tv_distance: TvDistanceGate | None = None
+    invalid_rate: InvalidRateGate | None = None
+
+
+MAX_EXAMPLES = 1000
 
 
 @dataclass(frozen=True)
@@ -192,6 +224,9 @@ class ParityConfig:
     preset: str | None = None
     output: Output = field(default_factory=Output)
     min_class_size: int = 30
+    # Rows listed in the report by id (largest differences, or one per kind of class change).
+    # Off by default: ids can be sensitive, so listing them is a deliberate choice.
+    examples: int = 0
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -215,6 +250,7 @@ _GATE_TYPES: dict[str, type[Any]] = {
     "kappa": KappaGate,
     "quality_difference": QualityDifferenceGate,
     "tv_distance": TvDistanceGate,
+    "invalid_rate": InvalidRateGate,
 }
 
 _SCORE_GATES = frozenset(
@@ -233,12 +269,13 @@ _CLASS_GATES = frozenset(
     {"label_agreement", "transitions", "class_prevalence", "kappa", "quality_difference"}
 )
 QUALITY_METRICS = ("accuracy", "macro_f1")
+NORMALIZED_TYPES = ("label",)
 
 # Which gates make sense for each output type. A gate configured for an output type that does
 # not support it is a configuration error, never silently ignored.
 SUPPORTED_GATES: dict[str, frozenset[str]] = {
     "score": _SCORE_GATES,
-    "label": frozenset({"coverage", "nonfinite"}) | _CLASS_GATES,
+    "label": frozenset({"coverage", "nonfinite", "invalid_rate"}) | _CLASS_GATES,
     # Per-class probability gates reuse the continuous checks; class decisions use the argmax.
     "probabilities": frozenset(
         {
@@ -256,15 +293,33 @@ SUPPORTED_GATES: dict[str, frozenset[str]] = {
 T = TypeVar("T")
 
 
+def _class_name(value: Any, where: str) -> str:
+    """Class names may look like numbers or booleans in YAML (1: billing); they are text."""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    raise ConfigError(f"{where}: expected a class name, got {value!r}")
+
+
 def _coerce(value: Any, type_name: str, where: str) -> Any:
     """Convert YAML values to the declared field type.
 
     PyYAML follows YAML 1.1, where `1e-5` (no dot) is a *string*; numbers are therefore
     converted by declared type instead of trusting the YAML parser.
     """
+    if type_name == "tuple[str, ...]":
+        items = value if isinstance(value, (list, tuple)) else [value]
+        return tuple(_class_name(v, f"{where}[{i}]") for i, v in enumerate(items))
     if type_name.startswith("tuple"):
         items = value if isinstance(value, (list, tuple)) else [value]
         return tuple(_coerce(v, "float", where) for v in items)
+    if type_name.startswith("dict"):
+        if not isinstance(value, Mapping):
+            raise ConfigError(f"{where}: expected a mapping, got {value!r}")
+        return {
+            _class_name(k, f"{where} key"): _class_name(v, f"{where}.{k}") for k, v in value.items()
+        }
     if type_name in ("float", "int"):
         if isinstance(value, bool):
             raise ConfigError(f"{where}: expected a number, got {value!r}")
@@ -377,6 +432,38 @@ def _validate(cfg: ParityConfig) -> None:
     if g.tv_distance:
         require(0 < g.tv_distance.q <= 1, "gates.tv_distance.q must be in (0, 1]")
         require(g.tv_distance.max >= 0, "gates.tv_distance.max must be >= 0")
+    require(0 <= cfg.examples <= MAX_EXAMPLES, f"examples must be between 0 and {MAX_EXAMPLES}")
+    norm = cfg.output.normalize
+    if norm is not None:
+        require(
+            cfg.output.type in NORMALIZED_TYPES,
+            f"output.normalize applies to output.type {list(NORMALIZED_TYPES)}, "
+            f"not {cfg.output.type!r}",
+        )
+        _validate_normalize(norm, "output.normalize", require)
+    if g.invalid_rate:
+        require(0 <= g.invalid_rate.max <= 1, "gates.invalid_rate.max must be in [0, 1]")
+        require(
+            norm is not None and bool(norm.allowed),
+            "gates.invalid_rate requires output.normalize.allowed (the list of valid classes)",
+        )
+
+
+def _validate_normalize(norm: Normalize, where: str, require: Any) -> None:
+    allowed = [norm.key(a) for a in norm.allowed]
+    require(all(allowed), f"{where}.allowed has an empty class name")
+    require(len(set(allowed)) == len(allowed), f"{where}.allowed has duplicates")
+    require(norm.invalid.strip() != "", f"{where}.invalid must not be empty")
+    require(
+        norm.key(norm.invalid) not in allowed,
+        f"{where}.invalid {norm.invalid!r} must not be one of the allowed classes",
+    )
+    keys = [norm.key(k) for k in norm.map]
+    require(all(keys), f"{where}.map has an empty key")
+    require(len(set(keys)) == len(keys), f"{where}.map has keys that are equal after normalising")
+    if allowed:
+        unknown = sorted({v for v in norm.map.values() if norm.key(v) not in allowed})
+        require(not unknown, f"{where}.map targets classes that are not allowed: {unknown}")
 
 
 def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
@@ -393,7 +480,7 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
         raise ConfigError(f"unknown top-level keys {unknown}; valid keys are {sorted(known)}")
 
     preset = raw.get("preset")
-    output = _build(Output, raw.get("output") or {}, "output")
+    output = _build_output(raw.get("output") or {})
     gate_raw: dict[str, Any] = {}
     if preset:
         if output.type == "label":
@@ -431,7 +518,19 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
         preset=preset,
         output=output,
         min_class_size=_coerce(raw.get("min_class_size", 30), "int", "min_class_size"),
+        examples=_coerce(raw.get("examples", 0), "int", "examples"),
     )
+
+
+def _build_output(raw: Any) -> Output:
+    if not isinstance(raw, Mapping):
+        raise ConfigError(f"output: expected a mapping, got {type(raw).__name__}")
+    raw = dict(raw)
+    normalize = raw.pop("normalize", None)
+    output = _build(Output, raw, "output")
+    if normalize is None:
+        return output
+    return dataclasses.replace(output, normalize=_build(Normalize, normalize, "output.normalize"))
 
 
 def load(path: str | Path) -> ParityConfig:

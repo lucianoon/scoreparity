@@ -272,10 +272,64 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                 )
             )
 
+    if g.invalid_rate:
+        gate_i = g.invalid_rate
+        invalid = cfg.output.normalize.invalid if cfg.output.normalize else ""
+        if n == 0:
+            results.append(_unverifiable("invalid_rate", gate_i.max, "no matched rows"))
+        else:
+            k_cand = int((frame[CAND] == invalid).sum())
+            k_ref = int((frame[REF] == invalid).sum())
+            lower, upper = clopper_pearson(k_cand, n, cfg.alpha)
+            results.append(
+                GateResult(
+                    "invalid_rate",
+                    upper <= gate_i.max,
+                    k_cand / n,
+                    gate_i.max,
+                    f"share of candidate answers outside the allowed classes; its {level} upper "
+                    "bound must stay below the threshold",
+                    {
+                        "ci": [lower, upper],
+                        "candidate_invalid": k_cand,
+                        "reference_invalid": k_ref,
+                        "reference_rate": k_ref / n,
+                        "rows": n,
+                        "rows_needed": rows_needed(gate_i.max, cfg.alpha),
+                    },
+                )
+            )
+
     return results
 
 
-def summary(alignment: Alignment) -> dict[str, Any]:
+def examples(alignment: Alignment, cfg: ParityConfig) -> list[dict[str, Any]]:
+    """Up to `cfg.examples` rows whose class changed, by id only (never the input text).
+
+    Rows are taken round-robin over the kinds of change (reference -> candidate pairs), the most
+    frequent first, so a rare kind of change is not crowded out by a common one.
+    """
+    frame = alignment.frame
+    changed = frame.loc[frame[REF] != frame[CAND], [cfg.columns.id, REF, CAND]]
+    if changed.empty or cfg.examples <= 0:
+        return []
+    changed = changed.sort_values([REF, CAND, cfg.columns.id], kind="stable")
+    groups = [g for _, g in changed.groupby([REF, CAND], sort=False)]
+    groups.sort(key=lambda g: (-len(g), str(g[REF].iloc[0]), str(g[CAND].iloc[0])))
+    out: list[dict[str, Any]] = []
+    for i in range(max(len(g) for g in groups)):
+        for g in groups:
+            if i < len(g):
+                row = g.iloc[i]
+                out.append(
+                    {"id": str(row[cfg.columns.id]), "reference": row[REF], "candidate": row[CAND]}
+                )
+                if len(out) == cfg.examples:
+                    return out
+    return out
+
+
+def summary(alignment: Alignment, cfg: ParityConfig | None = None) -> dict[str, Any]:
     frame = alignment.frame
     out: dict[str, Any] = {
         "n_reference": alignment.n_reference,
@@ -300,6 +354,12 @@ def summary(alignment: Alignment) -> dict[str, Any]:
             for i, cls in enumerate(alignment.classes)
         }
         out["kappa"] = cohen_kappa(cm).kappa
+        norm = cfg.output.normalize if cfg is not None else None
+        if norm is not None and norm.allowed:
+            out["invalid_share"] = {
+                "reference": float((frame[REF] == norm.invalid).mean()),
+                "candidate": float((frame[CAND] == norm.invalid).mean()),
+            }
         if TRUTH in frame.columns:
             truth = frame[TRUTH].to_numpy()
             out["accuracy"] = {

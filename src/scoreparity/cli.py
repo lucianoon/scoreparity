@@ -97,7 +97,43 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cmp.add_argument("--json", metavar="PATH", help="write the JSON report here")
     cmp.add_argument("--markdown", metavar="PATH", help="write the Markdown report here")
+    cmp.add_argument(
+        "--examples",
+        type=int,
+        metavar="N",
+        help="list up to N changed rows by id in the report (overrides the config; default 0)",
+    )
     cmp.add_argument("--quiet", action="store_true", help="do not print the report to stdout")
+
+    pln = sub.add_parser(
+        "plan-sample",
+        help="how many rows to score so a class gate can pass (before paying for them)",
+        description=(
+            "Sample size for the rate gates (label_agreement, transitions, invalid_rate): the "
+            "smallest number of rows from which a gate proving 'rate <= max' passes with the "
+            "requested power when the true rate is --expected-rate. Exact binomial computation."
+        ),
+    )
+    target = pln.add_mutually_exclusive_group(required=True)
+    target.add_argument("--max-rate", type=float, help="tolerance to prove (transitions, invalid)")
+    target.add_argument(
+        "--min-agreement", type=float, help="label_agreement threshold (max rate = 1 - this)"
+    )
+    expect = pln.add_mutually_exclusive_group()
+    expect.add_argument(
+        "--expected-rate", type=float, help="true rate you expect (e.g. from a noise run)"
+    )
+    expect.add_argument("--expected-agreement", type=float, help="agreement you expect")
+    pln.add_argument("--power", type=float, default=0.8, help="probability of passing (0.8)")
+    pln.add_argument("--alpha", type=float, default=0.05, help="as in the config (0.05)")
+    pln.add_argument(
+        "--class-share",
+        type=float,
+        help="share of rows in the smallest class (transitions are verified per class)",
+    )
+    pln.add_argument("--cost-per-row", type=float, help="price of scoring one row once")
+    pln.add_argument("--versions", type=int, default=2, help="versions to score (2)")
+    pln.add_argument("--json", metavar="PATH", help="write the plan as JSON")
 
     noi = sub.add_parser(
         "noise",
@@ -180,7 +216,14 @@ def _resolve_config(args: argparse.Namespace) -> ParityConfig:
     if getattr(args, "prob_prefix", None):
         output = dataclasses.replace(output, prob_prefix=args.prob_prefix)
     segments = tuple(args.segment) if args.segment is not None else cfg.segments
-    return dataclasses.replace(cfg, columns=columns, segments=segments, output=output)
+    examples = getattr(args, "examples", None)
+    return dataclasses.replace(
+        cfg,
+        columns=columns,
+        segments=segments,
+        output=output,
+        examples=cfg.examples if examples is None else examples,
+    )
 
 
 def _write_stdout(text: str) -> None:
@@ -281,6 +324,34 @@ def _cmd_noise(args: argparse.Namespace) -> int:
     return EXIT_PASS
 
 
+def _cmd_plan_sample(args: argparse.Namespace) -> int:
+    from scoreparity.planning import describe, plan_sample
+
+    max_rate = args.max_rate if args.max_rate is not None else 1 - args.min_agreement
+    if args.expected_agreement is not None:
+        expected = 1 - args.expected_agreement
+    else:
+        expected = args.expected_rate or 0.0
+    try:
+        plan = plan_sample(
+            max_rate,
+            expected,
+            alpha=args.alpha,
+            power=args.power,
+            class_share=args.class_share,
+            cost_per_row=args.cost_per_row,
+            versions=args.versions,
+        )
+    except ValueError as exc:
+        raise InputError(str(exc)) from exc
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(plan.to_dict(), indent=2, allow_nan=False) + "\n", encoding="utf-8"
+        )
+    _write_stdout(describe(plan))
+    return EXIT_PASS
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     path = Path(args.path)
     if path.exists() and not args.force:
@@ -308,6 +379,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_render(args)
         if args.command == "noise":
             return _cmd_noise(args)
+        if args.command == "plan-sample":
+            return _cmd_plan_sample(args)
         return _cmd_init(args)
     except ScoreParityError as exc:
         print(f"error: {exc}", file=sys.stderr)

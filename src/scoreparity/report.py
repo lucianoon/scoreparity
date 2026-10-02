@@ -16,6 +16,7 @@ from scoreparity import __version__
 from scoreparity.gates import GateResult
 
 SCHEMA_VERSION = 1
+MARKDOWN_EXAMPLES = 20  # a pull-request comment stays short; the JSON and HTML list them all
 
 
 def _clean(value: Any) -> Any:
@@ -152,6 +153,13 @@ def render_markdown(doc: dict[str, Any]) -> str:
             f"Class agreement: {100 * s['agreement']:.3f}% over {len(s.get('classes', []))} "
             f"classes; Cohen's kappa {_fmt(s.get('kappa'))}.",
         ]
+    invalid = s.get("invalid_share")
+    if invalid:
+        lines += [
+            "",
+            f"Answers outside the allowed classes: reference {100 * invalid['reference']:.3f}%, "
+            f"candidate {100 * invalid['candidate']:.3f}%.",
+        ]
     for g in doc["gates"]:
         details = g["details"]
         for key, what in (
@@ -172,16 +180,35 @@ def render_markdown(doc: dict[str, Any]) -> str:
                 + f" (each needs at least {details['rows_needed_per_class']} rows; collect more "
                 "rows or raise `min_class_size` to exclude them deliberately).",
             ]
+        events = {"label_agreement": "disagreement", "invalid_rate": "invalid answer"}
+        count_key = {"label_agreement": "disagreements", "invalid_rate": "candidate_invalid"}
         if (
-            g["name"] == "label_agreement"
+            g["name"] in events
             and not g["passed"]
-            and details.get("disagreements") == 0
+            and details.get(count_key[g["name"]]) == 0
             and "rows_needed" in details
         ):
             lines += [
                 "",
-                f"`label_agreement`: no disagreement observed, but {details['rows']} rows cannot "
-                f"prove the threshold; at least {details['rows_needed']} rows are needed.",
+                f"`{g['name']}`: no {events[g['name']]} observed, but {details['rows']} rows "
+                f"cannot prove the threshold; at least {details['rows_needed']} rows are needed "
+                "(`scoreparity plan-sample` sizes a sample before scoring it).",
             ]
+    examples = s.get("examples")
+    if examples:
+        shown = examples[:MARKDOWN_EXAMPLES]
+        extra = "difference" if "difference" in shown[0] else None
+        lines += [
+            "",
+            f"Examples by id ({len(shown)} of {len(examples)} listed in the report):",
+            "",
+            "| id | reference | candidate |" + (" difference |" if extra else ""),
+            "|---|---|---|" + ("---|" if extra else ""),
+        ]
+        for e in shown:
+            lines.append(
+                f"| {_code(e['id'])} | {_code(_fmt(e['reference']))} | "
+                f"{_code(_fmt(e['candidate']))} |" + (f" {_fmt(e[extra])} |" if extra else "")
+            )
     lines += ["", f"<sub>scoreparity {doc['environment']['scoreparity']}</sub>"]
     return "\n".join(lines) + "\n"
