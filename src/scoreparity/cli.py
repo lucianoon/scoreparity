@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--label", help="binary label column (enables AUC reporting/gate)")
     cmp.add_argument(
         "--output-type",
-        choices=["score", "label", "probabilities"],
+        choices=["score", "label", "probabilities", "labels"],
         help="what each row holds (overrides the config; default score)",
     )
     cmp.add_argument("--truth", help="class ground-truth column (label/probabilities outputs)")
