@@ -158,6 +158,10 @@ def measure_noise(
     if safety < 1:
         raise InputError("safety must be >= 1 (a factor below 1 makes reruns fail)")
     cfg = config or ParityConfig()
+    if cfg.output.type != "score":
+        raise InputError(
+            f"noise calibration supports output.type 'score' only (got {cfg.output.type!r})"
+        )
     measured = [
         _measure(name, reference, rep, cfg, context, q, thresholds, k_pct)
         for name, rep in replicates.items()

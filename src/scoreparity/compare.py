@@ -9,10 +9,9 @@ from typing import Any
 
 import pandas as pd
 
-from scoreparity import gates
-from scoreparity.align import align
 from scoreparity.config import ParityConfig
 from scoreparity.errors import InputError
+from scoreparity.outputs import get_output_kind
 from scoreparity.report import Report
 
 
@@ -70,13 +69,10 @@ def compare(
     equivalent produces a report with `report.passed == False`.
     """
     cfg = config or ParityConfig()
-    alignment = align(reference, candidate, cfg.columns, cfg.segments, context)
-    return Report(
-        gates=gates.evaluate(alignment, cfg),
-        summary=gates.summary(alignment),
-        config=cfg.to_dict(),
-        inputs=inputs or {},
+    gate_results, summary = get_output_kind(cfg.output.type).compare(
+        reference, candidate, cfg, context
     )
+    return Report(gates=gate_results, summary=summary, config=cfg.to_dict(), inputs=inputs or {})
 
 
 def compare_files(
