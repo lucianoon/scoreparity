@@ -270,18 +270,131 @@ def _segments(doc: dict[str, Any]) -> str:
     )
 
 
+MAX_HEATMAP_CLASSES = 25
+
+
+def _compact(count: int) -> str:
+    return (
+        str(count)
+        if count < 1000
+        else f"{count / 1000:.1f}k"
+        if count < 1_000_000
+        else f"{count / 1e6:.1f}M"
+    )
+
+
+def _confusion(doc: dict[str, Any]) -> str:
+    """Transition matrix (reference class -> candidate class) as a heatmap plus a data table.
+
+    Off-diagonal cells are shaded by the share of the reference class that moved (one hue,
+    light to dark); cells of transitions that failed the gate get a critical outline and a mark.
+    """
+    conf = doc["summary"].get("confusion")
+    if not conf:
+        return ""
+    classes = [str(c) for c in conf["classes"]]
+    counts = conf["counts"]
+    k = len(classes)
+    gate = next((g for g in doc["gates"] if g["name"] == "transitions"), None)
+    failing = set(gate["details"].get("failing_pairs", [])) if gate else set()
+    rows_total = [sum(r) for r in counts]
+    max_rate = max(
+        (
+            counts[i][j] / rows_total[i]
+            for i in range(k)
+            for j in range(k)
+            if i != j and rows_total[i]
+        ),
+        default=0.0,
+    )
+    table_rows = "".join(
+        f"<tr><td>{escape(classes[i])}</td>"
+        + "".join(f"<td class='num'>{counts[i][j]:,}</td>" for j in range(k))
+        + f"<td class='num'>{rows_total[i]:,}</td></tr>"
+        for i in range(k)
+    )
+    table = (
+        "<details><summary>Show data</summary><table><tr><th>reference \\ candidate</th>"
+        + "".join(f"<th class='num'>{escape(c)}</th>" for c in classes)
+        + f"<th class='num'>rows</th></tr>{table_rows}</table></details>"
+    )
+    intro = (
+        "<h2>Which classes changed?</h2>"
+        '<p class="lead">Rows are the reference class, columns the candidate class. The diagonal '
+        "is agreement; off the diagonal, darker means a larger share of that reference class "
+        "moved.</p>"
+    )
+    if k > MAX_HEATMAP_CLASSES:
+        return intro + f'<div class="card"><p>{k} classes: table only.</p>{table}</div>'
+
+    cell, left, top = 44, 140, 110
+    size_w, size_h = left + cell * k + 8, top + cell * k + 8
+    svg = [
+        f'<svg viewBox="0 0 {size_w} {size_h}" width="{size_w}" height="{size_h}" '
+        'role="img" aria-labelledby="cm-title">'
+        '<title id="cm-title">Transition matrix from reference class to candidate class</title>'
+    ]
+    for j, name in enumerate(classes):
+        x = left + j * cell + cell / 2
+        svg.append(
+            f'<text x="{x:.1f}" y="{top - 8}" text-anchor="start" '
+            f'transform="rotate(-45 {x:.1f} {top - 8})">{escape(name[:18])}</text>'
+        )
+    for i, name in enumerate(classes):
+        y = top + i * cell + cell / 2 + 4
+        svg.append(f'<text x="{left - 8}" y="{y:.1f}" text-anchor="end">{escape(name[:18])}</text>')
+        for j in range(k):
+            x, y0 = left + j * cell, top + i * cell
+            count = counts[i][j]
+            share = count / rows_total[i] if rows_total[i] else 0.0
+            label = f"{classes[i]} -> {classes[j]}"
+            bad = label in failing
+            if i == j:
+                fill, opacity = "var(--grid)", 1.0
+            else:
+                fill = "var(--series)"
+                opacity = 0.0 if count == 0 else 0.15 + 0.85 * (share / max_rate if max_rate else 0)
+            stroke = ' stroke="var(--critical)" stroke-width="2.5"' if bad else ""
+            svg.append(
+                f'<g class="mark" tabindex="0"><title>{escape(label)}: {count:,} rows '
+                f"({100 * share:.2f}% of {escape(classes[i])})</title>"
+                f'<rect x="{x + 1}" y="{y0 + 1}" width="{cell - 2}" height="{cell - 2}" rx="4" '
+                f'fill="{fill}" fill-opacity="{opacity:.3f}"{stroke}/>'
+                + (
+                    f'<text x="{x + cell / 2:.1f}" y="{y0 + cell / 2 + 4:.1f}" '
+                    f'text-anchor="middle">{"✕" if bad else ""}{_compact(count)}</text>'
+                    if count
+                    else ""
+                )
+                + "</g>"
+            )
+    svg.append("</svg>")
+    legend = (
+        '<div class="legend"><span><i class="key" style="background:var(--grid)"></i>'
+        'agreement</span><span><i class="key" style="background:var(--series)"></i>'
+        "share of the reference class that moved</span>"
+        + (
+            '<span><i class="key" style="background:transparent;outline:2px solid '
+            'var(--critical)"></i>✕ transition above the tolerance</span>'
+            if failing
+            else ""
+        )
+        + "</div>"
+    )
+    return intro + f'<div class="card">{legend}{"".join(svg)}{table}</div>'
+
+
 def render_html(doc: dict[str, Any]) -> str:
     """Render a JSON report document (see `Report.to_dict`) as a standalone HTML page."""
     passed = doc["verdict"] == "PASS"
     s = doc["summary"]
-    facts = [
-        (f"{s['n_matched_finite']:,}", "rows compared"),
-        (
-            f"{100 * s['identical_share']:.2f}%" if "identical_share" in s else "—",
-            "identical scores",
-        ),
-        (_fmt((s.get("abs_diff_quantiles") or {}).get("1.0")), "largest |difference|"),
-    ]
+    facts = [(f"{s['n_matched_finite']:,}", "rows compared")]
+    if "identical_share" in s:
+        facts.append((f"{100 * s['identical_share']:.2f}%", "identical outputs"))
+        facts.append((_fmt((s.get("abs_diff_quantiles") or {}).get("1.0")), "largest |difference|"))
+    if "agreement" in s:
+        facts.append((f"{100 * s['agreement']:.3f}%", "same class"))
+        facts.append((_fmt(s.get("kappa")), "Cohen's kappa"))
     auc = s.get("auc")
     if auc:
         facts.append((_fmt(auc["delta"]), "AUC difference"))
@@ -315,7 +428,7 @@ def render_html(doc: dict[str, Any]) -> str:
         + "</div><h2>Gates</h2><div class='card'><table><tr><th>Gate</th><th>Result</th>"
         "<th class='num'>Value</th><th class='num'>Threshold</th><th>What it checks</th></tr>"
         f"{gates_rows}</table></div>"
-        f"{_histogram(doc)}{_segments(doc)}"
+        f"{_histogram(doc)}{_confusion(doc)}{_segments(doc)}"
         f"<footer>{inputs}<div>scoreparity {escape(doc['environment']['scoreparity'])} · "
         f"report schema {doc['schema_version']}</div></footer></main></body></html>"
     )

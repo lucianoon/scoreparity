@@ -79,6 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--reference-score", help="score column in the reference table")
     cmp.add_argument("--candidate-score", help="score column in the candidate table")
     cmp.add_argument("--label", help="binary label column (enables AUC reporting/gate)")
+    cmp.add_argument(
+        "--output-type",
+        choices=["score", "label", "probabilities"],
+        help="what each row holds (overrides the config; default score)",
+    )
+    cmp.add_argument("--truth", help="class ground-truth column (label/probabilities outputs)")
+    cmp.add_argument("--prob-prefix", help="prefix of the probability columns (default p_)")
     cmp.add_argument("--html", metavar="PATH", help="write the self-contained HTML report here")
     cmp.add_argument("--junit", metavar="PATH", help="write a JUnit XML file (one test per gate)")
     cmp.add_argument(
@@ -147,7 +154,11 @@ def _resolve_config(args: argparse.Namespace) -> ParityConfig:
     if args.config:
         cfg = load(args.config)
     else:
-        cfg = from_dict({"preset": args.preset} if args.preset else {})
+        # Build with the output type so a preset is filtered to the gates that apply to it.
+        raw: dict[str, object] = {"preset": args.preset} if args.preset else {}
+        if getattr(args, "output_type", None):
+            raw["output"] = {"type": args.output_type}
+        cfg = from_dict(raw)
     columns = dataclasses.replace(
         cfg.columns,
         **{
@@ -158,12 +169,18 @@ def _resolve_config(args: argparse.Namespace) -> ParityConfig:
                 "reference_score": args.reference_score,
                 "candidate_score": args.candidate_score,
                 "label": args.label,
+                "truth": getattr(args, "truth", None),
             }.items()
             if value is not None
         },
     )
+    output = cfg.output
+    if getattr(args, "output_type", None):
+        output = dataclasses.replace(output, type=args.output_type)
+    if getattr(args, "prob_prefix", None):
+        output = dataclasses.replace(output, prob_prefix=args.prob_prefix)
     segments = tuple(args.segment) if args.segment is not None else cfg.segments
-    return dataclasses.replace(cfg, columns=columns, segments=segments)
+    return dataclasses.replace(cfg, columns=columns, segments=segments, output=output)
 
 
 def _write_stdout(text: str) -> None:

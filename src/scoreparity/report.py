@@ -99,6 +99,16 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
+def _code(value: Any) -> str:
+    """Inline code for a user-provided name (segment, class) in a PR comment.
+
+    Backticks and line breaks would let a name close the code span and inject Markdown, so
+    they are replaced before wrapping.
+    """
+    text = str(value).replace("`", "'").replace("\r", " ").replace("\n", " ")
+    return f"`{text[:120]}`"
+
+
 def render_markdown(doc: dict[str, Any]) -> str:
     """Markdown suited to a pull-request comment or a CI job summary."""
     icon = "✅" if doc["verdict"] == "PASS" else "❌"
@@ -136,12 +146,42 @@ def render_markdown(doc: dict[str, Any]) -> str:
             f"AUC: reference {auc['reference']:.5f}, candidate {auc['candidate']:.5f} "
             f"(difference {_fmt(auc['delta'])}, 90% CI {_fmt(lo)} to {_fmt(hi)}).",
         ]
+    if "agreement" in s:
+        lines += [
+            "",
+            f"Class agreement: {100 * s['agreement']:.3f}% over {len(s.get('classes', []))} "
+            f"classes; Cohen's kappa {_fmt(s.get('kappa'))}.",
+        ]
     for g in doc["gates"]:
-        failing = g["details"].get("failing_segments")
-        if failing:
+        details = g["details"]
+        for key, what in (
+            ("failing_segments", "Segments failing"),
+            ("failing_classes", "Classes failing"),
+            ("failing_pairs", "Class transitions failing"),
+        ):
+            items = details.get(key)
+            if items:
+                shown = ", ".join(_code(x) for x in items[:20])
+                more = f" (+{len(items) - 20} more)" if len(items) > 20 else ""
+                lines += ["", f"{what} `{g['name']}`: {shown}{more}"]
+        if not g["passed"] and details.get("underpowered_classes"):
             lines += [
                 "",
-                f"Segments failing `{g['name']}`: " + ", ".join(f"`{x}`" for x in failing),
+                f"`{g['name']}`: not enough rows to verify the threshold for "
+                + ", ".join(_code(x) for x in details["underpowered_classes"][:20])
+                + f" (each needs at least {details['rows_needed_per_class']} rows; collect more "
+                "rows or raise `min_class_size` to exclude them deliberately).",
+            ]
+        if (
+            g["name"] == "label_agreement"
+            and not g["passed"]
+            and details.get("disagreements") == 0
+            and "rows_needed" in details
+        ):
+            lines += [
+                "",
+                f"`label_agreement`: no disagreement observed, but {details['rows']} rows cannot "
+                f"prove the threshold; at least {details['rows_needed']} rows are needed.",
             ]
     lines += ["", f"<sub>scoreparity {doc['environment']['scoreparity']}</sub>"]
     return "\n".join(lines) + "\n"

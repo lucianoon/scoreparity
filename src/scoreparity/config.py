@@ -30,6 +30,7 @@ class Columns:
     reference_score: str | None = None
     candidate_score: str | None = None
     label: str | None = None
+    truth: str | None = None  # class ground truth, categorical outputs
 
     @property
     def reference(self) -> str:
@@ -42,14 +43,21 @@ class Columns:
 
 # Kinds of model output a comparison can handle. Each kind has its own alignment rules and
 # its own set of applicable gates (see SUPPORTED_GATES below).
-OUTPUT_TYPES: tuple[str, ...] = ("score",)
+OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities")
 
 
 @dataclass(frozen=True)
 class Output:
-    """What each row of the score tables holds."""
+    """What each row of the tables holds.
+
+    - score: one number per row (columns.score / reference_score / candidate_score);
+    - label: one predicted class per row (same columns, holding class names);
+    - probabilities: one probability column per class, named `<prob_prefix><class>`.
+    """
 
     type: str = "score"
+    prob_prefix: str = "p_"
+    prob_sum_tolerance: float = 1e-3
 
 
 @dataclass(frozen=True)
@@ -113,6 +121,50 @@ class AucDifferenceGate:
 
 
 @dataclass(frozen=True)
+class LabelAgreementGate:
+    """Share of rows with the same class; passes if its one-sided lower bound is >= min."""
+
+    min: float
+
+
+@dataclass(frozen=True)
+class TransitionsGate:
+    """Rows of class A that became class B, per pair; the upper bound must be <= max_rate."""
+
+    max_rate: float
+
+
+@dataclass(frozen=True)
+class ClassPrevalenceGate:
+    """Paired difference of each class's share; its (1-2*alpha) CI must lie inside +/- margin."""
+
+    margin: float
+
+
+@dataclass(frozen=True)
+class KappaGate:
+    """Cohen's kappa between the versions; passes if its one-sided lower bound is >= min."""
+
+    min: float
+
+
+@dataclass(frozen=True)
+class QualityDifferenceGate:
+    """Accuracy or macro-F1 against ground truth; the CI of the difference inside +/- margin."""
+
+    margin: float
+    metric: str = "accuracy"
+
+
+@dataclass(frozen=True)
+class TvDistanceGate:
+    """Total variation distance between the probability vectors of each row (quantile q)."""
+
+    max: float
+    q: float = 1.0
+
+
+@dataclass(frozen=True)
 class Gates:
     coverage: CoverageGate | None = field(default_factory=CoverageGate)
     nonfinite: NonFiniteGate | None = field(default_factory=NonFiniteGate)
@@ -122,6 +174,12 @@ class Gates:
     decision_flips: DecisionFlipsGate | None = None
     top_k_overlap: TopKOverlapGate | None = None
     auc_difference: AucDifferenceGate | None = None
+    label_agreement: LabelAgreementGate | None = None
+    transitions: TransitionsGate | None = None
+    class_prevalence: ClassPrevalenceGate | None = None
+    kappa: KappaGate | None = None
+    quality_difference: QualityDifferenceGate | None = None
+    tv_distance: TvDistanceGate | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +191,7 @@ class ParityConfig:
     gates: Gates = field(default_factory=Gates)
     preset: str | None = None
     output: Output = field(default_factory=Output)
+    min_class_size: int = 30
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -150,12 +209,48 @@ _GATE_TYPES: dict[str, type[Any]] = {
     "decision_flips": DecisionFlipsGate,
     "top_k_overlap": TopKOverlapGate,
     "auc_difference": AucDifferenceGate,
+    "label_agreement": LabelAgreementGate,
+    "transitions": TransitionsGate,
+    "class_prevalence": ClassPrevalenceGate,
+    "kappa": KappaGate,
+    "quality_difference": QualityDifferenceGate,
+    "tv_distance": TvDistanceGate,
 }
+
+_SCORE_GATES = frozenset(
+    {
+        "coverage",
+        "nonfinite",
+        "max_abs_diff",
+        "quantile_abs_diff",
+        "mean_diff_equivalence",
+        "decision_flips",
+        "top_k_overlap",
+        "auc_difference",
+    }
+)
+_CLASS_GATES = frozenset(
+    {"label_agreement", "transitions", "class_prevalence", "kappa", "quality_difference"}
+)
+QUALITY_METRICS = ("accuracy", "macro_f1")
 
 # Which gates make sense for each output type. A gate configured for an output type that does
 # not support it is a configuration error, never silently ignored.
 SUPPORTED_GATES: dict[str, frozenset[str]] = {
-    "score": frozenset(_GATE_TYPES),
+    "score": _SCORE_GATES,
+    "label": frozenset({"coverage", "nonfinite"}) | _CLASS_GATES,
+    # Per-class probability gates reuse the continuous checks; class decisions use the argmax.
+    "probabilities": frozenset(
+        {
+            "coverage",
+            "nonfinite",
+            "max_abs_diff",
+            "quantile_abs_diff",
+            "mean_diff_equivalence",
+            "tv_distance",
+        }
+    )
+    | _CLASS_GATES,
 }
 
 T = TypeVar("T")
@@ -261,6 +356,27 @@ def _validate(cfg: ParityConfig) -> None:
     if g.auc_difference:
         require(g.auc_difference.margin > 0, "gates.auc_difference.margin must be > 0")
         require(cfg.columns.label is not None, "gates.auc_difference requires columns.label")
+    require(cfg.min_class_size >= 1, "min_class_size must be >= 1")
+    require(cfg.output.prob_prefix != "", "output.prob_prefix must not be empty")
+    require(0 < cfg.output.prob_sum_tolerance < 1, "output.prob_sum_tolerance must be in (0, 1)")
+    if g.label_agreement:
+        require(0 <= g.label_agreement.min <= 1, "gates.label_agreement.min must be in [0, 1]")
+    if g.transitions:
+        require(0 <= g.transitions.max_rate <= 1, "gates.transitions.max_rate must be in [0, 1]")
+    if g.class_prevalence:
+        require(g.class_prevalence.margin > 0, "gates.class_prevalence.margin must be > 0")
+    if g.kappa:
+        require(-1 <= g.kappa.min <= 1, "gates.kappa.min must be in [-1, 1]")
+    if g.quality_difference:
+        require(g.quality_difference.margin > 0, "gates.quality_difference.margin must be > 0")
+        require(
+            g.quality_difference.metric in QUALITY_METRICS,
+            f"gates.quality_difference.metric must be one of {list(QUALITY_METRICS)}",
+        )
+        require(cfg.columns.truth is not None, "gates.quality_difference requires columns.truth")
+    if g.tv_distance:
+        require(0 < g.tv_distance.q <= 1, "gates.tv_distance.q must be in (0, 1]")
+        require(g.tv_distance.max >= 0, "gates.tv_distance.max must be >= 0")
 
 
 def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
@@ -277,7 +393,16 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
         raise ConfigError(f"unknown top-level keys {unknown}; valid keys are {sorted(known)}")
 
     preset = raw.get("preset")
-    gate_raw: dict[str, Any] = dict(preset_gates(preset)) if preset else {}
+    output = _build(Output, raw.get("output") or {}, "output")
+    gate_raw: dict[str, Any] = {}
+    if preset:
+        if output.type == "label":
+            raise ConfigError(
+                "presets define score tolerances and do not apply to output.type 'label'; "
+                "configure the class gates explicitly"
+            )
+        supported = SUPPORTED_GATES.get(output.type, frozenset())
+        gate_raw = {k: v for k, v in preset_gates(preset).items() if k in supported}
     explicit = raw.get("gates") or {}
     if not isinstance(explicit, Mapping):
         raise ConfigError("gates: expected a mapping")
@@ -304,7 +429,8 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
         min_segment_size=_coerce(raw.get("min_segment_size", 30), "int", "min_segment_size"),
         gates=gates,
         preset=preset,
-        output=_build(Output, raw.get("output") or {}, "output"),
+        output=output,
+        min_class_size=_coerce(raw.get("min_class_size", 30), "int", "min_class_size"),
     )
 
 

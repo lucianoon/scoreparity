@@ -47,16 +47,12 @@ def _top_k_ids(values: np.ndarray, k: int) -> set[int]:
     return set(order[:k].tolist())
 
 
-def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
+def common_gates(
+    alignment: Alignment, cfg: ParityConfig, missing_text: str = "NaN/inf"
+) -> list[GateResult]:
+    """Gates every output kind has: dropped ids and outputs missing on exactly one side."""
     g = cfg.gates
-    frame = alignment.frame
-    n = len(frame)
-    diff = frame[DIFF].to_numpy(np.float64)
-    abs_diff = np.abs(diff)
-    ref = frame[REF].to_numpy(np.float64)
-    cand = frame[CAND].to_numpy(np.float64)
     results: list[GateResult] = []
-
     if g.coverage:
         results.append(
             GateResult(
@@ -82,10 +78,22 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                 mismatches <= g.nonfinite.max_mismatches,
                 float(mismatches),
                 float(g.nonfinite.max_mismatches),
-                "rows where exactly one version produced NaN/inf",
+                f"rows where exactly one version produced {missing_text}",
                 {"both_nonfinite": alignment.n_nonfinite_both},
             )
         )
+    return results
+
+
+def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
+    g = cfg.gates
+    frame = alignment.frame
+    n = len(frame)
+    diff = frame[DIFF].to_numpy(np.float64)
+    abs_diff = np.abs(diff)
+    ref = frame[REF].to_numpy(np.float64)
+    cand = frame[CAND].to_numpy(np.float64)
+    results = common_gates(alignment, cfg)
 
     if g.max_abs_diff:
         t = g.max_abs_diff.max

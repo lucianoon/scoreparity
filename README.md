@@ -122,6 +122,42 @@ Unknown keys are errors: a misspelled gate silently disabled would be worse than
 | `top_k_overlap` | overlap of the top-k% sets ≥ `min_overlap` | ranking, targeting |
 | `auc_difference` | paired DeLong (1−2α) CI of ΔAUC inside ±`margin` | model quality |
 
+## Class labels and probability vectors
+
+Classifiers (including LLM-based ones) often output a **class** or a **vector of class
+probabilities** rather than one score. Set `output.type`:
+
+```yaml
+version: 1
+output: {type: label}              # or: {type: probabilities, prob_prefix: "p_"}
+columns: {id: message_id, score: intent, truth: human_intent}   # `score` = the label column
+segments: [channel]
+gates:
+  label_agreement: {min: 0.99}     # lower bound of the agreement, globally and per segment
+  transitions: {max_rate: 0.005}   # no class may lose more than 0.5% of its rows to another
+  class_prevalence: {margin: 0.005}
+  kappa: {min: 0.97}               # agreement beyond chance (matters with a dominant class)
+  quality_difference: {metric: macro_f1, margin: 0.01}   # needs columns.truth
+```
+
+| Gate | Passes when | Method |
+|---|---|---|
+| `label_agreement` | the one-sided lower bound of the share of rows with the same class ≥ `min` | Clopper-Pearson (exact) |
+| `transitions` | for each class with ≥ `min_class_size` rows, the upper bound of the share of its rows that moved to each other class ≤ `max_rate` | Clopper-Pearson, intersection-union |
+| `class_prevalence` | the (1−2α) CI of each class's paired share difference lies inside ±`margin` | Tango score interval |
+| `kappa` | the lower bound of Cohen's kappa between the versions ≥ `min` | Fleiss–Cohen–Everitt variance |
+| `quality_difference` | the CI of accuracy or macro-F1 difference against `truth` lies inside ±`margin` | Tango (accuracy), bootstrap (macro-F1) |
+| `tv_distance` (probabilities) | a quantile of the per-row total variation distance ≤ `max` | descriptive |
+
+For `probabilities`, `max_abs_diff`, `quantile_abs_diff` and `mean_diff_equivalence` apply to
+every class column (all must pass), class gates use each row's most probable class, and the
+`exact`/`float-noise`/`quantization` presets keep only the gates that apply.
+
+Class gates make a statement about the **population** the rows were sampled from, so they need
+enough rows: proving "at most 1% of a class moves" with zero observed moves needs 299 rows of
+that class. When there are not enough, the gate fails and the report says how many rows are
+needed (see [docs/choosing-tolerances.md](docs/choosing-tolerances.md#how-many-rows)).
+
 ## Calibrated tolerances: `scoreparity noise`
 
 Guessing a margin is the weak spot of every equivalence test. Instead, score the **reference**
