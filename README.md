@@ -31,8 +31,40 @@ scoreparity compare \
 ```
 
 Exit codes: **0** equivalent, **1** not equivalent, **2** the comparison could not be made
-(missing columns, duplicated ids, unreadable files). The Markdown report goes to stdout; use
-`--json` and `--markdown` to write them to files.
+(missing columns, duplicated ids, unreadable files). The Markdown report goes to stdout.
+
+| Output | Flag | For |
+|---|---|---|
+| JSON | `--json r.json` | machines; versioned schema, re-renderable with `scoreparity render` |
+| Markdown | `--markdown r.md` | pull-request comments and CI job summaries |
+| HTML | `--html r.html` | humans: a self-contained page (no external resources) with charts of how large the differences are and which segments moved, in light and dark mode |
+| JUnit XML | `--junit junit.xml` | any CI test UI (GitHub, GitLab, Jenkins, Azure DevOps): one test per gate |
+
+A JSON report produced elsewhere (a pipeline job, a notebook) can be rendered later:
+`scoreparity render r.json --html r.html --junit junit.xml`.
+
+## GitHub Action
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write   # for the PR comment; optional
+
+steps:
+  - uses: actions/checkout@v7
+  - run: python score.py --out candidate.parquet       # however you produce scores
+  - uses: lucianoon/scoreparity@main                   # pin a release tag once published
+    with:
+      reference: baseline/scores.parquet
+      candidate: candidate.parquet
+      config: scoreparity.yaml
+```
+
+The action writes the report to the job summary, keeps one up-to-date comment on the pull
+request, uploads JSON/Markdown/HTML/JUnit as an artifact and fails the job when the candidate is
+not equivalent (`fail-on-mismatch: "false"` turns that into a warning; input errors always fail).
+Outputs: `verdict` (PASS/FAIL/ERROR), `exit-code`, `report-dir`. To try it locally, generate
+example data with `python examples/make_example_data.py`.
 
 Real output, comparing a notebook model with its pipeline migration (left) and the same
 model run with bfloat16 autocast (right):

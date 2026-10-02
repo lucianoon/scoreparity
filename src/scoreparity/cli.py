@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from scoreparity import __version__
 from scoreparity.config import ParityConfig, from_dict, load
-from scoreparity.errors import ScoreParityError
+from scoreparity.errors import InputError, ScoreParityError
 from scoreparity.presets import PRESETS
+from scoreparity.report import SCHEMA_VERSION
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -77,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--reference-score", help="score column in the reference table")
     cmp.add_argument("--candidate-score", help="score column in the candidate table")
     cmp.add_argument("--label", help="binary label column (enables AUC reporting/gate)")
+    cmp.add_argument("--html", metavar="PATH", help="write the self-contained HTML report here")
+    cmp.add_argument("--junit", metavar="PATH", help="write a JUnit XML file (one test per gate)")
     cmp.add_argument(
         "--segment",
         action="append",
@@ -87,6 +91,17 @@ def build_parser() -> argparse.ArgumentParser:
     cmp.add_argument("--json", metavar="PATH", help="write the JSON report here")
     cmp.add_argument("--markdown", metavar="PATH", help="write the Markdown report here")
     cmp.add_argument("--quiet", action="store_true", help="do not print the report to stdout")
+
+    ren = sub.add_parser(
+        "render",
+        help="re-render a saved JSON report as Markdown, HTML or JUnit",
+        description="Exit code mirrors the report verdict: 0 PASS, 1 FAIL, 2 unreadable report.",
+    )
+    ren.add_argument("report", help="JSON report written by `compare --json`")
+    ren.add_argument("--markdown", metavar="PATH")
+    ren.add_argument("--html", metavar="PATH")
+    ren.add_argument("--junit", metavar="PATH")
+    ren.add_argument("--quiet", action="store_true", help="do not print the report to stdout")
 
     init = sub.add_parser("init", help="write a commented configuration file to start from")
     init.add_argument("path", nargs="?", default="scoreparity.yaml")
@@ -133,18 +148,48 @@ def _write_stdout(text: str) -> None:
         sys.stdout.buffer.flush()
 
 
+def _write_outputs(doc: dict[str, object], args: argparse.Namespace) -> None:
+    from scoreparity.report import render_markdown
+    from scoreparity.report_html import render_html
+    from scoreparity.report_junit import render_junit
+
+    renderers: dict[str, Callable[[], str]] = {
+        "json": lambda: json.dumps(doc, indent=2, allow_nan=False, ensure_ascii=False) + "\n",
+        "markdown": lambda: render_markdown(doc),
+        "html": lambda: render_html(doc),
+        "junit": lambda: render_junit(doc),
+    }
+    for name, render in renderers.items():
+        target = getattr(args, name, None)
+        if target:
+            path = Path(target)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render(), encoding="utf-8")
+    if not args.quiet:
+        _write_stdout(render_markdown(doc))
+
+
 def _cmd_compare(args: argparse.Namespace) -> int:
     from scoreparity.compare import compare_files
 
     report = compare_files(args.reference, args.candidate, _resolve_config(args), args.context)
-    if args.json:
-        Path(args.json).write_text(report.to_json() + "\n", encoding="utf-8")
-    markdown = report.to_markdown()
-    if args.markdown:
-        Path(args.markdown).write_text(markdown, encoding="utf-8")
-    if not args.quiet:
-        _write_stdout(markdown)
+    _write_outputs(report.to_dict(), args)
     return EXIT_PASS if report.passed else EXIT_FAIL
+
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    """Re-render a saved JSON report (e.g. produced by a pipeline job) in other formats."""
+    try:
+        doc = json.loads(Path(args.report).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise InputError(f"{args.report}: cannot read JSON report: {exc}") from exc
+    if not isinstance(doc, dict) or doc.get("schema_version") != SCHEMA_VERSION:
+        raise InputError(
+            f"{args.report}: not a scoreparity report with schema_version {SCHEMA_VERSION}"
+        )
+    args.json = None
+    _write_outputs(doc, args)
+    return EXIT_PASS if doc["verdict"] == "PASS" else EXIT_FAIL
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -170,6 +215,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "compare":
             return _cmd_compare(args)
+        if args.command == "render":
+            return _cmd_render(args)
         return _cmd_init(args)
     except ScoreParityError as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -1,0 +1,161 @@
+name: scoreparity
+description: Fail a workflow when a model change alters its scores beyond a tolerance declared up front.
+author: Luciano de Oliveira Nunes
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  reference:
+    description: Reference scores (.csv or .parquet), e.g. produced by the current production model.
+    required: true
+  candidate:
+    description: Candidate scores (.csv or .parquet), e.g. produced by the code in this pull request.
+    required: true
+  config:
+    description: Path to a scoreparity YAML configuration. Mutually exclusive with `preset`.
+    required: false
+    default: ""
+  preset:
+    description: Preset to use without a configuration file (exact, float-noise, quantization).
+    required: false
+    default: ""
+  context:
+    description: Optional table with labels/segments keyed by id.
+    required: false
+    default: ""
+  args:
+    description: Extra CLI arguments, e.g. "--id customer_id --label churned --segment plan".
+    required: false
+    default: ""
+  fail-on-mismatch:
+    description: Fail the job when the candidate is not equivalent. Input errors always fail.
+    required: false
+    default: "true"
+  comment-on-pr:
+    description: Post (and keep updating) the Markdown report as a pull-request comment.
+    required: false
+    default: "true"
+  artifact-name:
+    description: Name of the uploaded artifact (JSON, Markdown, HTML and JUnit reports).
+    required: false
+    default: scoreparity-report
+  python-version:
+    description: Python version used to run scoreparity.
+    required: false
+    default: "3.12"
+  github-token:
+    description: Token used to comment on the pull request (needs pull-requests write).
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  verdict:
+    description: PASS, FAIL or ERROR.
+    value: ${{ steps.compare.outputs.verdict }}
+  exit-code:
+    description: 0 equivalent, 1 not equivalent, 2 comparison could not be made.
+    value: ${{ steps.compare.outputs.exit-code }}
+  report-dir:
+    description: Directory containing report.json, report.md, report.html and junit.xml.
+    value: ${{ steps.compare.outputs.report-dir }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install scoreparity
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      # Installs the code at the same ref as the action itself, so `@v1` means one version.
+      run: python -m pip install --disable-pip-version-check --quiet "${ACTION_PATH}[parquet]"
+
+    - name: Compare scores
+      id: compare
+      shell: bash
+      # Inputs reach the script only through environment variables and bash arrays:
+      # interpolating ${{ inputs.* }} into the script would allow command injection.
+      env:
+        INPUT_REFERENCE: ${{ inputs.reference }}
+        INPUT_CANDIDATE: ${{ inputs.candidate }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_PRESET: ${{ inputs.preset }}
+        INPUT_CONTEXT: ${{ inputs.context }}
+        INPUT_ARGS: ${{ inputs.args }}
+        OUT: ${{ runner.temp }}/scoreparity
+      run: |
+        set +e
+        mkdir -p "$OUT"
+        args=(compare --reference "$INPUT_REFERENCE" --candidate "$INPUT_CANDIDATE"
+              --json "$OUT/report.json" --markdown "$OUT/report.md"
+              --html "$OUT/report.html" --junit "$OUT/junit.xml" --quiet)
+        [ -n "$INPUT_CONFIG" ] && args+=(--config "$INPUT_CONFIG")
+        [ -n "$INPUT_PRESET" ] && args+=(--preset "$INPUT_PRESET")
+        [ -n "$INPUT_CONTEXT" ] && args+=(--context "$INPUT_CONTEXT")
+        read -r -a extra <<< "$INPUT_ARGS"
+        scoreparity "${args[@]}" "${extra[@]}"
+        code=$?
+        case "$code" in 0) verdict=PASS ;; 1) verdict=FAIL ;; *) verdict=ERROR ;; esac
+        {
+          echo "exit-code=$code"
+          echo "verdict=$verdict"
+          echo "report-dir=$OUT"
+        } >> "$GITHUB_OUTPUT"
+        if [ -f "$OUT/report.md" ]; then
+          cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "### scoreparity: the comparison could not be made (exit code $code)" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        exit 0
+
+    - name: Upload reports
+      if: always() && steps.compare.outputs.verdict != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.compare.outputs.report-dir }}
+        if-no-files-found: ignore
+
+    - name: Comment on the pull request
+      if: >-
+        inputs.comment-on-pr == 'true' && github.event_name == 'pull_request'
+        && steps.compare.outputs.verdict != 'ERROR'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        OUT: ${{ steps.compare.outputs.report-dir }}
+        ARTIFACT: ${{ inputs.artifact-name }}
+      run: |
+        marker="<!-- scoreparity:${ARTIFACT} -->"
+        body="${marker}"$'\n'"$(cat "$OUT/report.md")"
+        existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq ".[] | select(.body | startswith(\"$marker\")) | .id" 2>/dev/null | head -n 1)
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" > /dev/null
+        else
+          gh api "repos/$REPO/issues/$PR/comments" -f body="$body" > /dev/null
+        fi || echo "::warning title=scoreparity::could not comment on the pull request (fork PR or missing 'pull-requests: write' permission); the report is in the job summary"
+
+    - name: Enforce the verdict
+      shell: bash
+      env:
+        CODE: ${{ steps.compare.outputs.exit-code }}
+        FAIL_ON_MISMATCH: ${{ inputs.fail-on-mismatch }}
+      run: |
+        if [ "$CODE" = "0" ]; then exit 0; fi
+        if [ "$CODE" = "1" ]; then
+          if [ "$FAIL_ON_MISMATCH" = "true" ]; then
+            echo "::error title=scoreparity::candidate scores are not equivalent to the reference"
+            exit 1
+          fi
+          echo "::warning title=scoreparity::candidate scores are not equivalent (fail-on-mismatch is off)"
+          exit 0
+        fi
+        echo "::error title=scoreparity::the comparison could not be made (exit code $CODE)"
+        exit 2

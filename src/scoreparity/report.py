@@ -74,6 +74,16 @@ class Report:
     def to_markdown(self) -> str:
         return render_markdown(self.to_dict())
 
+    def to_html(self) -> str:
+        from scoreparity.report_html import render_html
+
+        return render_html(self.to_dict())
+
+    def to_junit(self) -> str:
+        from scoreparity.report_junit import render_junit
+
+        return render_junit(self.to_dict())
+
 
 def _fmt(value: Any) -> str:
     if value is None:
