@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Third-party actions pinned to commit SHAs in the workflows and in the composite action;
+  least-privilege `permissions` per job; checkout credentials not persisted.
+- CI audits locked dependencies for known vulnerabilities (`pip-audit`, also weekly), lints
+  workflows with `zizmor`, and runs CodeQL (`security-extended`) on Python and Actions code.
+- `SECURITY.md` with private vulnerability reporting.
+
 ### Added
 
 - `scoreparity noise`: measures the noise floor from replicate runs of the reference model and
