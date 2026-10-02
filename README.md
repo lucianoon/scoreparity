@@ -122,6 +122,33 @@ Unknown keys are errors: a misspelled gate silently disabled would be worse than
 | `top_k_overlap` | overlap of the top-k% sets ≥ `min_overlap` | ranking, targeting |
 | `auc_difference` | paired DeLong (1−2α) CI of ΔAUC inside ±`margin` | model quality |
 
+## Calibrated tolerances: `scoreparity noise`
+
+Guessing a margin is the weak spot of every equivalence test. Instead, score the **reference**
+model again under conditions that should not matter (another batch size, machine or thread
+count) and let `scoreparity` measure the noise floor and write the configuration:
+
+```bash
+scoreparity noise --reference ref.parquet \
+  --replicate rerun1.parquet --replicate rerun2.parquet --replicate rerun3.parquet \
+  --id customer_id --label churned --segment plan --out scoreparity.yaml
+```
+
+Tolerances are the worst measured noise × a safety factor (default 3), and the discrete gates
+(flips, top-k, AUC ordering) are never set stricter than what the `max_abs_diff` tolerance
+already allows. In the test suite's simulations, 300 of 300 fresh harmless reruns pass and a
+change of ten times the noise always fails. See
+[docs/choosing-tolerances.md](docs/choosing-tolerances.md) for the method and for how to
+combine it with what the business can absorb.
+
+## More documentation
+
+- [Choosing tolerances](docs/choosing-tolerances.md)
+- [Integrations](docs/integrations.md): GitHub Actions, GitLab CI / Jenkins / Azure DevOps
+  (JUnit), Amazon SageMaker Pipelines, generic orchestrators
+- [Report JSON schema](schema/report-v1.schema.json): every report is validated against it in
+  the test suite
+
 ## Statistical notes
 
 - **Equivalence, not difference.** TOST (Schuirmann, 1987) rejects "the difference is at least

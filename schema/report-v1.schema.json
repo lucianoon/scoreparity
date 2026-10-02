@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lucianoon/scoreparity/schema/report-v1.schema.json",
+  "title": "scoreparity report, schema version 1",
+  "description": "Output of `scoreparity compare --json`. Fields may be added in minor releases; removing or renaming a field requires a new schema_version.",
+  "type": "object",
+  "required": ["schema_version", "verdict", "failed_gates", "gates", "summary", "config", "inputs", "environment"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "verdict": {"enum": ["PASS", "FAIL"]},
+    "failed_gates": {"type": "array", "items": {"type": "string"}},
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "passed", "value", "threshold", "description", "details"],
+        "properties": {
+          "name": {
+            "enum": ["coverage", "nonfinite", "max_abs_diff", "quantile_abs_diff", "mean_diff_equivalence", "decision_flips", "top_k_overlap", "auc_difference"]
+          },
+          "passed": {"type": "boolean"},
+          "value": {"type": ["number", "null"]},
+          "threshold": {"type": ["number", "null"]},
+          "description": {"type": "string"},
+          "details": {"type": "object"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["n_reference", "n_candidate", "n_matched_finite", "n_missing", "n_extra", "n_nonfinite_mismatch", "n_nonfinite_both"],
+      "properties": {
+        "n_reference": {"type": "integer", "minimum": 1},
+        "n_candidate": {"type": "integer", "minimum": 0},
+        "n_matched_finite": {"type": "integer", "minimum": 0},
+        "n_missing": {"type": "integer", "minimum": 0},
+        "n_extra": {"type": "integer", "minimum": 0},
+        "n_nonfinite_mismatch": {"type": "integer", "minimum": 0},
+        "n_nonfinite_both": {"type": "integer", "minimum": 0},
+        "abs_diff_quantiles": {"type": "object", "additionalProperties": {"type": "number"}},
+        "abs_diff_histogram": {
+          "type": "object",
+          "required": ["zero", "decades"],
+          "properties": {
+            "zero": {"type": "integer", "minimum": 0},
+            "decades": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["exponent", "count"],
+                "properties": {"exponent": {"type": "integer"}, "count": {"type": "integer", "minimum": 0}}
+              }
+            }
+          }
+        },
+        "mean_diff": {"type": "number"},
+        "identical_share": {"type": "number", "minimum": 0, "maximum": 1},
+        "spearman": {"type": ["number", "null"]},
+        "auc": {
+          "type": ["object", "null"],
+          "required": ["reference", "candidate", "delta", "delta_ci90"],
+          "properties": {
+            "reference": {"type": "number"},
+            "candidate": {"type": "number"},
+            "delta": {"type": "number"},
+            "delta_ci90": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+          }
+        }
+      }
+    },
+    "config": {"type": "object"},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["scoreparity", "python"],
+      "properties": {"scoreparity": {"type": "string"}, "python": {"type": "string"}}
+    }
+  }
+}
