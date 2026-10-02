@@ -27,6 +27,8 @@ LABEL = "__label"  # binary ground truth (score outputs, AUC)
 TRUTH = "__truth"  # class ground truth (categorical outputs)
 REF_P = "__ref_p::"  # + class name, probabilities outputs
 CAND_P = "__cand_p::"
+REF_STAB = "__ref_stability"  # share of a row's replicas voting for its majority class
+CAND_STAB = "__cand_stability"
 
 
 @dataclass(frozen=True)
@@ -241,6 +243,47 @@ def _normalized_truth(frame: pd.DataFrame, columns: Columns, norm: Normalize | N
     frame[TRUTH] = truth.astype(str).to_numpy()
 
 
+def _collapse_replicas(
+    df: pd.DataFrame,
+    columns: Columns,
+    label_col: str,
+    norm: Normalize | None,
+    side: str,
+    stability_col: str,
+) -> pd.DataFrame:
+    """One row per id: the majority class over its replicas, and how stable it is.
+
+    Ties go to the alphabetically first class, so the result is deterministic; a tie always
+    means stability <= 0.5, which the report shows. Labels are normalised before voting.
+    Other columns (truth, segments) are taken from the id's first row.
+    """
+    cid, rep = columns.id, columns.replica
+    assert rep is not None
+    _require_columns(df, [cid, label_col, rep], side)
+    if len(df) == 0:
+        empty: pd.DataFrame = df.assign(**{stability_col: pd.Series(dtype=np.float64)})
+        return empty
+    if df[cid].isna().any():
+        raise InputError(f"{side}: id column has missing values")
+    if df[rep].isna().any():
+        raise InputError(f"{side}: replica column {rep!r} has missing values")
+    dup = df.duplicated([cid, rep], keep=False)
+    if dup.any():
+        examples = list(dict.fromkeys(df.loc[dup, cid].astype(str)))[:5]
+        raise InputError(f"{side}: duplicated (id, replica) pairs, e.g. ids {examples}")
+    labels, usable = _labels(df[label_col], norm)
+    votes = pd.DataFrame({cid: df[cid].to_numpy(), "label": labels.to_numpy(dtype=object)})
+    counts = votes[usable].groupby([cid, "label"], sort=False).size().rename("n").reset_index()
+    counts = counts.sort_values(["n", "label"], ascending=[False, True], kind="stable")
+    top = counts.drop_duplicates(cid).set_index(cid)
+    total = counts.groupby(cid, sort=False)["n"].sum()
+    out = df.drop_duplicates(cid).drop(columns=[rep]).set_index(cid)
+    out[label_col] = top["label"].reindex(out.index)  # NA when no replica gave a usable label
+    out[stability_col] = (top["n"] / total).reindex(out.index).astype(np.float64)
+    collapsed: pd.DataFrame = out.reset_index()
+    return collapsed
+
+
 def align_labels(
     reference: pd.DataFrame,
     candidate: pd.DataFrame,
@@ -257,15 +300,29 @@ def align_labels(
     outside the allowed classes.
     """
     cid = columns.id
+    label_norm = normalize
+    stability: tuple[str, ...] = ()
+    if columns.replica is not None:
+        # Several rows per id: vote first (labels normalised once, here), then align as usual.
+        reference = _collapse_replicas(
+            reference, columns, columns.reference, normalize, "reference", REF_STAB
+        )
+        candidate = _collapse_replicas(
+            candidate, columns, columns.candidate, normalize, "candidate", CAND_STAB
+        )
+        label_norm, stability = None, (REF_STAB, CAND_STAB)
     _check_ids(reference, candidate, cid, [columns.reference], [columns.candidate])
     ref = pd.DataFrame({cid: reference[cid], REF: reference[columns.reference]})
     cand = pd.DataFrame({cid: candidate[cid], CAND: candidate[columns.candidate]})
+    if stability:
+        ref[REF_STAB] = reference[REF_STAB].to_numpy()
+        cand[CAND_STAB] = candidate[CAND_STAB].to_numpy()
     extra_cols = [c for c in (columns.truth, *segments) if c is not None]
     renames = {columns.truth: TRUTH} if columns.truth is not None else {}
     matched, missing, extra = _join(ref, cand, cid, reference, context, extra_cols, renames)
 
-    ref_labels, ref_ok = _labels(matched[REF], normalize)
-    cand_labels, cand_ok = _labels(matched[CAND], normalize)
+    ref_labels, ref_ok = _labels(matched[REF], label_norm)
+    cand_labels, cand_ok = _labels(matched[CAND], label_norm)
     matched = matched.assign(**{REF: ref_labels.to_numpy(), CAND: cand_labels.to_numpy()})
     alignment = _finish(matched, ref_ok, cand_ok, reference, candidate, missing, extra, segments)
     frame = alignment.frame

@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format follows
 - `examples: N` / `--examples N`: rows listed by id in the JSON, Markdown and HTML reports
   (class changes round-robin over the kinds of change; largest differences for scores and
   probabilities). Off by default.
+- `scoreparity noise --output-type label`: noise floor of a classifier from reruns of the
+  reference model; suggests the class gates from the worst confidence bound × `--safety`
+  (default 1.75 for labels), with one transition limit per class. Calibrated by simulation.
+- `gates.transitions.per_class`: a limit per source class.
+- Replicas (`columns.replica`, `--replica`): several answers per id compared by majority class;
+  the report shows unstable ids per version and how many changes fall on them. New `stability`
+  gate (Tango upper bound of the increase in unstable ids).
 
 ## [0.2.0] - 2026-10-02
 

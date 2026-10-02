@@ -86,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cmp.add_argument("--truth", help="class ground-truth column (label/probabilities outputs)")
     cmp.add_argument("--prob-prefix", help="prefix of the probability columns (default p_)")
+    cmp.add_argument(
+        "--replica",
+        metavar="COLUMN",
+        help="replica column: several rows per id, compared by majority class (labels)",
+    )
     cmp.add_argument("--html", metavar="PATH", help="write the self-contained HTML report here")
     cmp.add_argument("--junit", metavar="PATH", help="write a JUnit XML file (one test per gate)")
     cmp.add_argument(
@@ -150,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         metavar="PATH",
-        help="scores of a rerun of the reference model; repeat (3+ recommended)",
+        help="outputs of a rerun of the reference model; repeat (3+ recommended)",
     )
     noi.add_argument("--context", help="optional table with labels/segments keyed by id")
     noi.add_argument("--config", help="base config: columns, segments, alpha (gates are replaced)")
@@ -160,7 +165,17 @@ def build_parser() -> argparse.ArgumentParser:
     noi.add_argument("--candidate-score", help="score column in the replicate tables")
     noi.add_argument("--label")
     noi.add_argument("--segment", action="append", default=None, metavar="COLUMN")
-    noi.add_argument("--safety", type=float, default=3.0, help="multiplier over the noise (>= 1)")
+    noi.add_argument(
+        "--output-type",
+        choices=["score", "label"],
+        help="what each row holds (overrides the config; default score)",
+    )
+    noi.add_argument(
+        "--safety",
+        type=float,
+        default=None,
+        help="multiplier over the noise, >= 1 (default 3 for scores, 1.75 for labels)",
+    )
     noi.add_argument("--q", type=float, default=0.99, help="quantile for quantile_abs_diff")
     noi.add_argument("--threshold", action="append", type=float, help="decision threshold(s)")
     noi.add_argument("--top-k", action="append", type=float, help="top-k percentage(s)")
@@ -206,6 +221,7 @@ def _resolve_config(args: argparse.Namespace) -> ParityConfig:
                 "candidate_score": args.candidate_score,
                 "label": args.label,
                 "truth": getattr(args, "truth", None),
+                "replica": getattr(args, "replica", None),
             }.items()
             if value is not None
         },

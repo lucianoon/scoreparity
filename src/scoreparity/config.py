@@ -31,6 +31,7 @@ class Columns:
     candidate_score: str | None = None
     label: str | None = None
     truth: str | None = None  # class ground truth, categorical outputs
+    replica: str | None = None  # several rows per id, one per replica (label outputs)
 
     @property
     def reference(self) -> str:
@@ -150,9 +151,14 @@ class LabelAgreementGate:
 
 @dataclass(frozen=True)
 class TransitionsGate:
-    """Rows of class A that became class B, per pair; the upper bound must be <= max_rate."""
+    """Rows of class A that became class B, per pair; the upper bound must be <= max_rate.
+
+    `per_class` sets a different limit for the rows of a given source class (for example, a
+    small class that is noisy by nature); classes not listed use `max_rate`.
+    """
 
     max_rate: float
+    per_class: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -185,6 +191,13 @@ class InvalidRateGate:
 
 
 @dataclass(frozen=True)
+class StabilityGate:
+    """Share of ids whose replicas disagree: candidate minus reference, upper bound <= margin."""
+
+    margin: float
+
+
+@dataclass(frozen=True)
 class TvDistanceGate:
     """Total variation distance between the probability vectors of each row (quantile q)."""
 
@@ -209,6 +222,7 @@ class Gates:
     quality_difference: QualityDifferenceGate | None = None
     tv_distance: TvDistanceGate | None = None
     invalid_rate: InvalidRateGate | None = None
+    stability: StabilityGate | None = None
 
 
 MAX_EXAMPLES = 1000
@@ -251,6 +265,7 @@ _GATE_TYPES: dict[str, type[Any]] = {
     "quality_difference": QualityDifferenceGate,
     "tv_distance": TvDistanceGate,
     "invalid_rate": InvalidRateGate,
+    "stability": StabilityGate,
 }
 
 _SCORE_GATES = frozenset(
@@ -275,7 +290,7 @@ NORMALIZED_TYPES = ("label",)
 # not support it is a configuration error, never silently ignored.
 SUPPORTED_GATES: dict[str, frozenset[str]] = {
     "score": _SCORE_GATES,
-    "label": frozenset({"coverage", "nonfinite", "invalid_rate"}) | _CLASS_GATES,
+    "label": frozenset({"coverage", "nonfinite", "invalid_rate", "stability"}) | _CLASS_GATES,
     # Per-class probability gates reuse the continuous checks; class decisions use the argmax.
     "probabilities": frozenset(
         {
@@ -317,6 +332,11 @@ def _coerce(value: Any, type_name: str, where: str) -> Any:
     if type_name.startswith("dict"):
         if not isinstance(value, Mapping):
             raise ConfigError(f"{where}: expected a mapping, got {value!r}")
+        if type_name == "dict[str, float]":
+            return {
+                _class_name(k, f"{where} key"): _coerce(v, "float", f"{where}.{k}")
+                for k, v in value.items()
+            }
         return {
             _class_name(k, f"{where} key"): _class_name(v, f"{where}.{k}") for k, v in value.items()
         }
@@ -418,6 +438,10 @@ def _validate(cfg: ParityConfig) -> None:
         require(0 <= g.label_agreement.min <= 1, "gates.label_agreement.min must be in [0, 1]")
     if g.transitions:
         require(0 <= g.transitions.max_rate <= 1, "gates.transitions.max_rate must be in [0, 1]")
+        require(
+            all(0 <= v <= 1 for v in g.transitions.per_class.values()),
+            "gates.transitions.per_class values must be in [0, 1]",
+        )
     if g.class_prevalence:
         require(g.class_prevalence.margin > 0, "gates.class_prevalence.margin must be > 0")
     if g.kappa:
@@ -441,6 +465,15 @@ def _validate(cfg: ParityConfig) -> None:
             f"not {cfg.output.type!r}",
         )
         _validate_normalize(norm, "output.normalize", require)
+    if cfg.columns.replica is not None:
+        require(
+            cfg.output.type == "label",
+            f"columns.replica applies to output.type 'label', not {cfg.output.type!r}",
+        )
+        require(cfg.columns.replica != cfg.columns.id, "columns.replica must differ from id")
+    if g.stability:
+        require(g.stability.margin > 0, "gates.stability.margin must be > 0")
+        require(cfg.columns.replica is not None, "gates.stability requires columns.replica")
     if g.invalid_rate:
         require(0 <= g.invalid_rate.max <= 1, "gates.invalid_rate.max must be in [0, 1]")
         require(

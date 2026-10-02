@@ -422,6 +422,9 @@ def render_html(doc: dict[str, Any]) -> str:
     if "agreement" in s:
         facts.append((f"{100 * s['agreement']:.3f}%", "same class"))
         facts.append((_fmt(s.get("kappa")), "Cohen's kappa"))
+    if "stability" in s:
+        unstable = s["stability"]["candidate"]["unstable_share"]
+        facts.append((f"{100 * unstable:.2f}%", "unstable ids (candidate)"))
     if "invalid_share" in s:
         facts.append((f"{100 * s['invalid_share']['candidate']:.3f}%", "invalid answers"))
     auc = s.get("auc")
