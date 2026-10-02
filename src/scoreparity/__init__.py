@@ -1,6 +1,6 @@
 """scoreparity: score parity gates for ML model changes."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from scoreparity.compare import compare, compare_files, read_table
 from scoreparity.config import ParityConfig, from_dict, load

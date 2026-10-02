@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python score.py --model ./model --out candidate.parquet
-      - uses: lucianoon/scoreparity@v0.1.0
+      - uses: lucianoon/scoreparity@v0.2.0
         with:
           reference: baseline/scores.parquet   # e.g. downloaded from the last release
           candidate: candidate.parquet
@@ -34,7 +34,7 @@ a full commit SHA instead of a tag.
 score-parity:
   image: python:3.12-slim
   script:
-    - pip install "scoreparity[parquet] @ git+https://github.com/lucianoon/scoreparity@v0.1.0"
+    - pip install "scoreparity[parquet] @ git+https://github.com/lucianoon/scoreparity@v0.2.0"
     - python score.py --out candidate.parquet
     - scoreparity compare --reference baseline.parquet --candidate candidate.parquet
         --config scoreparity.yaml --junit junit.xml --html parity.html --markdown parity.md
