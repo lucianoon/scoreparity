@@ -6,11 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Class outputs: `output.type: label` (one predicted class per row) and
+  `output.type: probabilities` (one probability column per class, `output.prob_prefix`).
+- Class gates: `label_agreement` (Clopper-Pearson lower bound, also per segment),
+  `transitions` (per class pair, Clopper-Pearson upper bound, `min_class_size`),
+  `class_prevalence` (Tango score interval for paired proportions), `kappa`
+  (Fleiss-Cohen-Everitt variance), `quality_difference` against `columns.truth` (accuracy via
+  Tango, macro-F1 via a multinomial bootstrap over row types that scales to millions of rows).
+- `tv_distance` and per-class `max_abs_diff`/`quantile_abs_diff`/`mean_diff_equivalence` for
+  probability vectors; presets keep only the gates that apply to the output type.
+- Report: transition-matrix heatmap in HTML, class agreement and kappa in Markdown, guidance
+  when a sample is too small to verify a tolerance (rows needed per class).
+- CLI: `--output-type`, `--truth`, `--prob-prefix`.
+- Docs: "How many rows?" in docs/choosing-tolerances.md.
+
+### Security
+
+- Markdown reports neutralise backticks and line breaks in user-provided names (segments,
+  classes) so they cannot inject Markdown into pull-request comments.
+
 ### Changed
 
-- Internal: comparisons dispatch on an output kind (, the default),
-  preparing support for other output types. No behaviour change: a golden test asserts that
-  reports match those produced by the released 0.1.0.
+- Internal: comparisons dispatch on an output kind (`output: {type: score}`, the default). No
+  behaviour change for score outputs: a golden test asserts that reports match those produced
+  by the released 0.1.0.
 
 ## [0.1.0] - 2026-10-02
 

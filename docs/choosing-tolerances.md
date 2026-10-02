@@ -76,6 +76,30 @@ in [0, 1], useful before any measurement exists. Replace them with a measured co
 soon as you can, and keep that configuration in version control: a margin chosen after seeing
 the result is not a test.
 
+## How many rows?
+
+The score gates describe the rows you give them. The **class gates** (`label_agreement`,
+`transitions`, `class_prevalence`, `kappa`, `quality_difference`) make a statement about the
+population the rows were sampled from, which is what matters when the rows are a sample (for
+example, 2,000 messages re-classified by a new LLM version). A sample can only prove a tight
+tolerance if it is large enough, even when it shows no difference at all.
+
+Rows needed when **zero** disagreements are observed (one-sided 95%, `alpha: 0.05`):
+
+| Claim | Rows needed |
+|---|---|
+| agreement ≥ 95% (or a class loses ≤ 5% of its rows) | 59 |
+| ≥ 99% / ≤ 1% | 299 |
+| ≥ 99.5% / ≤ 0.5% | 598 |
+| ≥ 99.9% / ≤ 0.1% | 2,995 |
+| ≥ 99.95% / ≤ 0.05% | 5,990 |
+
+For `transitions` the count is **per class**: a class with fewer rows cannot be verified at
+that tolerance. The report names those classes and the number of rows they need. You can then
+collect more rows, loosen the tolerance, or deliberately exclude small classes by raising
+`min_class_size` (they are still visible in the transition matrix). Observed disagreements
+raise the numbers above, so plan with headroom.
+
 ## Statistical fine print
 
 - `mean_diff_equivalence` and `auc_difference` are equivalence tests (TOST): the (1 − 2α)
