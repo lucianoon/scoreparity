@@ -122,6 +122,19 @@ def test_config_file_and_cli_overrides(files: dict[str, Path], tmp_path: Path) -
     assert code == EXIT_PASS
 
 
+def test_report_on_a_cp1252_console_does_not_crash(
+    files: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: Windows consoles (cp1252) cannot encode the status icons."""
+    import io
+
+    buffer = io.BytesIO()
+    monkeypatch.setattr("sys.stdout", io.TextIOWrapper(buffer, encoding="cp1252"))
+    args = ["compare", "--reference", str(files["ref"]), "--candidate", str(files["same"])]
+    assert main([*args, "--preset", "exact"]) == EXIT_PASS
+    assert b"PASS" in buffer.getvalue()
+
+
 def test_csv_reading_is_bit_exact(tmp_path: Path) -> None:
     """Regression: pandas' default CSV float parser is off by 1 ulp for ~25% of values."""
     from scoreparity.compare import read_table
