@@ -257,6 +257,26 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
     return results
 
 
+def examples(alignment: Alignment, cfg: ParityConfig, values: np.ndarray) -> list[dict[str, Any]]:
+    """The `cfg.examples` rows with the largest `values` (ties by row order), by id only."""
+    frame = alignment.frame
+    if cfg.examples <= 0 or len(frame) == 0:
+        return []
+    order = np.lexsort((np.arange(len(values)), -values))[: cfg.examples]
+    ids = frame[cfg.columns.id].to_numpy()
+    ref, cand = frame[REF].to_numpy(), frame[CAND].to_numpy()
+    return [
+        {
+            "id": str(ids[i]),
+            "reference": ref[i].item() if hasattr(ref[i], "item") else ref[i],
+            "candidate": cand[i].item() if hasattr(cand[i], "item") else cand[i],
+            "difference": float(values[i]),
+        }
+        for i in order
+        if values[i] > 0
+    ]
+
+
 def _decade_histogram(abs_diff: np.ndarray) -> dict[str, Any]:
     """Counts of |diff| per power of ten: bucket e holds values in [10**e, 10**(e+1)).
 

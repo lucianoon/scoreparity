@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Label normalisation for LLM outputs (`output.normalize`): stripping, lowercasing, synonym
+  `map` and `allowed` classes; anything else (refusals, empty or malformed answers) becomes the
+  `invalid` class and takes part in every class gate. Ground truth is normalised the same way.
+- `invalid_rate` gate: one-sided Clopper-Pearson upper bound of the candidate's share of
+  invalid answers.
+- `scoreparity plan-sample`: exact binomial sample-size planning for the rate gates
+  (`label_agreement`, `transitions`, `invalid_rate`), with per-class totals and cost estimates.
+  The returned size keeps the requested power for every larger sample (binomial sawtooth).
+- `examples: N` / `--examples N`: rows listed by id in the JSON, Markdown and HTML reports
+  (class changes round-robin over the kinds of change; largest differences for scores and
+  probabilities). Off by default.
+
 ## [0.2.0] - 2026-10-02
 
 ### Added

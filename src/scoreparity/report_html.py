@@ -384,6 +384,33 @@ def _confusion(doc: dict[str, Any]) -> str:
     return intro + f'<div class="card">{legend}{"".join(svg)}{table}</div>'
 
 
+def _examples(doc: dict[str, Any]) -> str:
+    examples = doc["summary"].get("examples")
+    if not examples:
+        return ""
+    extra = "difference" if "difference" in examples[0] else None
+    head = "<tr><th>id</th><th>reference</th><th>candidate</th>" + (
+        "<th class='num'>difference</th></tr>" if extra else "</tr>"
+    )
+    rows = "".join(
+        f"<tr><td><code>{escape(str(e['id']))}</code></td>"
+        f"<td>{escape(_fmt(e['reference']))}</td><td>{escape(_fmt(e['candidate']))}</td>"
+        + (f"<td class='num'>{escape(_fmt(e[extra]))}</td>" if extra else "")
+        + "</tr>"
+        for e in examples
+    )
+    what = (
+        "the largest differences first"
+        if extra
+        else "rows whose class changed, one kind of change at a time"
+    )
+    return (
+        "<h2>Examples</h2>"
+        f'<p class="lead">Rows by id only ({what}), to look up in the source system.</p>'
+        f"<div class='card'><table>{head}{rows}</table></div>"
+    )
+
+
 def render_html(doc: dict[str, Any]) -> str:
     """Render a JSON report document (see `Report.to_dict`) as a standalone HTML page."""
     passed = doc["verdict"] == "PASS"
@@ -395,6 +422,8 @@ def render_html(doc: dict[str, Any]) -> str:
     if "agreement" in s:
         facts.append((f"{100 * s['agreement']:.3f}%", "same class"))
         facts.append((_fmt(s.get("kappa")), "Cohen's kappa"))
+    if "invalid_share" in s:
+        facts.append((f"{100 * s['invalid_share']['candidate']:.3f}%", "invalid answers"))
     auc = s.get("auc")
     if auc:
         facts.append((_fmt(auc["delta"]), "AUC difference"))
@@ -428,7 +457,7 @@ def render_html(doc: dict[str, Any]) -> str:
         + "</div><h2>Gates</h2><div class='card'><table><tr><th>Gate</th><th>Result</th>"
         "<th class='num'>Value</th><th class='num'>Threshold</th><th>What it checks</th></tr>"
         f"{gates_rows}</table></div>"
-        f"{_histogram(doc)}{_confusion(doc)}{_segments(doc)}"
+        f"{_histogram(doc)}{_confusion(doc)}{_segments(doc)}{_examples(doc)}"
         f"<footer>{inputs}<div>scoreparity {escape(doc['environment']['scoreparity'])} · "
         f"report schema {doc['schema_version']}</div></footer></main></body></html>"
     )

@@ -22,7 +22,12 @@ class LabelOutput:
         cfg: ParityConfig,
         context: pd.DataFrame | None,
     ) -> tuple[list[GateResult], dict[str, Any]]:
-        alignment = align_labels(reference, candidate, cfg.columns, cfg.segments, context)
+        alignment = align_labels(
+            reference, candidate, cfg.columns, cfg.segments, context, cfg.output.normalize
+        )
         results = gates.common_gates(alignment, cfg, missing_text="a missing label")
         results += gates_categorical.evaluate(alignment, cfg)
-        return results, gates_categorical.summary(alignment)
+        out = gates_categorical.summary(alignment, cfg)
+        if cfg.examples:
+            out["examples"] = gates_categorical.examples(alignment, cfg)
+        return results, out

@@ -158,6 +158,49 @@ enough rows: proving "at most 1% of a class moves" with zero observed moves need
 that class. When there are not enough, the gate fails and the report says how many rows are
 needed (see [docs/choosing-tolerances.md](docs/choosing-tolerances.md#how-many-rows)).
 
+## LLM classifiers
+
+When the labels come from an LLM (a new model version, a new prompt, another provider), the
+answers need cleaning before they can be compared, some answers are not a class at all, and
+every row costs money. Three features address this:
+
+```yaml
+output:
+  type: label
+  normalize:
+    lowercase: true
+    map: {cancelar: cancelamento, cancel: cancelamento}   # synonyms -> canonical class
+    allowed: [fatura, sinal, oferta, cancelamento]
+    invalid: __invalid__     # anything else: refusals, empty answers, malformed output
+columns: {id: message_id, score: answer}
+examples: 20                 # list changed rows by id (off by default)
+gates:
+  label_agreement: {min: 0.98}
+  transitions: {max_rate: 0.01}
+  invalid_rate: {max: 0.005} # upper bound of the candidate's share of invalid answers
+```
+
+- **Normalisation**: answers are stripped, optionally lowercased and mapped to canonical classes;
+  with `allowed`, everything else becomes the `invalid` class, which then takes part in every
+  gate (a class that turns into refusals shows up as a transition to `__invalid__`). The ground
+  truth is normalised the same way and must be a valid class.
+- **`examples: N`** (or `--examples N`) lists up to N changed rows by id, one kind of change at
+  a time (for scores and probabilities, the largest differences first). The tool never needs
+  the message text, so the report holds no content beyond ids and classes, and lists ids only
+  when asked to.
+- **`scoreparity plan-sample`** says how many rows to score *before* paying for them:
+
+```console
+$ scoreparity plan-sample --min-agreement 0.98 --expected-agreement 0.995 --cost-per-row 0.002
+To show that the rate is at most 0.02 (one-sided 95% bound) when the true rate is 0.005, with 80% power:
+  rows needed: 386 (the gate passes with at most 3 events; power at this size 87.0%)
+  estimated cost: 386 rows x 2 version(s) x 0.002 = 1.54
+```
+
+It uses the exact binomial distribution of the gate's own decision rule and returns a size from
+which every larger sample also reaches the requested power. For `transitions`, which are
+verified per class, pass `--class-share` (the share of the smallest class) to get the total.
+
 ## Calibrated tolerances: `scoreparity noise`
 
 Guessing a margin is the weak spot of every equivalence test. Instead, score the **reference**

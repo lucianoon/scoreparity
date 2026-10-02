@@ -100,6 +100,20 @@ collect more rows, loosen the tolerance, or deliberately exclude small classes b
 `min_class_size` (they are still visible in the transition matrix). Observed disagreements
 raise the numbers above, so plan with headroom.
 
+`scoreparity plan-sample` does that planning exactly. Give it the tolerance and the rate you
+expect (from a noise run, or from experience) and it returns the smallest sample from which the
+gate passes with the requested power (default 80%), plus the cost if you give a price per row:
+
+```bash
+# transitions at 1% when about 0.2% of a class moves, smallest class = 5% of the rows
+scoreparity plan-sample --max-rate 0.01 --expected-rate 0.002 --class-share 0.05
+#   rows needed: 773 per class ... 15,460 rows in total
+```
+
+The power of a binomial test is a sawtooth in n: one more row can lower it slightly. The plan
+reports the size from which every larger sample keeps the power, and also the first size that
+reaches it, which may be smaller.
+
 ## Statistical fine print
 
 - `mean_diff_equivalence` and `auc_difference` are equivalence tests (TOST): the (1 − 2α)

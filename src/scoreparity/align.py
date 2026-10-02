@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from scoreparity.config import Columns
+from scoreparity.config import Columns, Normalize
 from scoreparity.errors import InputError
 
 REF = "__ref"
@@ -203,11 +203,42 @@ def align(
 # --------------------------------------------------------------------------- class labels
 
 
-def _labels(series: pd.Series) -> tuple[pd.Series, np.ndarray]:
-    """Normalise labels to stripped strings; return (labels, usable mask)."""
+def _labels(series: pd.Series, norm: Normalize | None = None) -> tuple[pd.Series, np.ndarray]:
+    """Normalise labels to stripped strings; return (labels, usable mask).
+
+    With `norm`, labels are also lowercased and mapped as configured; with `norm.allowed`, any
+    label outside it, including a missing or empty one, becomes `norm.invalid` and is usable.
+    """
     text = series.astype("string").str.strip()
     usable = (text.notna() & (text != "")).to_numpy(dtype=bool)
-    return text.fillna(""), usable
+    text = text.fillna("")
+    if norm is None:
+        return text, usable
+    keys = text.str.lower() if norm.lowercase else text
+    mapping = {norm.key(k): norm.key(v) for k, v in norm.map.items()}
+    if mapping:
+        keys = keys.replace(mapping)
+    if not norm.allowed:
+        return keys, usable
+    canonical = {norm.key(a): a for a in norm.allowed}
+    classes = keys.map(canonical).astype("string")  # NA where not allowed (or empty)
+    return classes.fillna(norm.invalid), np.ones(len(classes), dtype=bool)
+
+
+def _normalized_truth(frame: pd.DataFrame, columns: Columns, norm: Normalize | None) -> None:
+    _class_truth(frame, columns)
+    if columns.truth is None or norm is None:
+        return
+    truth, _ = _labels(frame[TRUTH], norm)
+    if norm.allowed:
+        bad = frame.loc[(truth == norm.invalid).to_numpy(), TRUTH]
+        if len(bad):
+            examples = sorted(set(bad.astype(str)))[:5]
+            raise InputError(
+                f"truth column {columns.truth!r} has {len(bad)} rows outside "
+                f"output.normalize.allowed, e.g. {examples}; ground truth must be a valid class"
+            )
+    frame[TRUTH] = truth.astype(str).to_numpy()
 
 
 def align_labels(
@@ -216,11 +247,14 @@ def align_labels(
     columns: Columns,
     segments: tuple[str, ...] = (),
     context: pd.DataFrame | None = None,
+    normalize: Normalize | None = None,
 ) -> Alignment:
     """Align two tables holding one predicted class per row.
 
     Labels are compared as stripped strings, so 1 and "1" are the same class. A missing or empty
-    label on exactly one side counts as a non-finite mismatch (behaviour, not an input error).
+    label on exactly one side counts as a non-finite mismatch (behaviour, not an input error),
+    unless `normalize.allowed` is set: then it is the invalid class, like any other answer
+    outside the allowed classes.
     """
     cid = columns.id
     _check_ids(reference, candidate, cid, [columns.reference], [columns.candidate])
@@ -230,17 +264,19 @@ def align_labels(
     renames = {columns.truth: TRUTH} if columns.truth is not None else {}
     matched, missing, extra = _join(ref, cand, cid, reference, context, extra_cols, renames)
 
-    ref_labels, ref_ok = _labels(matched[REF])
-    cand_labels, cand_ok = _labels(matched[CAND])
+    ref_labels, ref_ok = _labels(matched[REF], normalize)
+    cand_labels, cand_ok = _labels(matched[CAND], normalize)
     matched = matched.assign(**{REF: ref_labels.to_numpy(), CAND: cand_labels.to_numpy()})
     alignment = _finish(matched, ref_ok, cand_ok, reference, candidate, missing, extra, segments)
     frame = alignment.frame
     frame[REF] = frame[REF].astype(str)
     frame[CAND] = frame[CAND].astype(str)
-    _class_truth(frame, columns)
+    _normalized_truth(frame, columns, normalize)
     observed = set(frame[REF]) | set(frame[CAND])
     if columns.truth is not None:
         observed |= set(frame[TRUTH])
+    if normalize is not None:
+        observed |= set(normalize.allowed)  # declared classes are reported even when unseen
     return Alignment(**{**alignment.__dict__, "classes": tuple(sorted(observed))})
 
 

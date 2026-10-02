@@ -58,7 +58,8 @@
               "class_prevalence",
               "kappa",
               "quality_difference",
-              "tv_distance"
+              "tv_distance",
+              "invalid_rate"
             ]
           },
           "passed": {
@@ -254,6 +255,58 @@
           "type": "object",
           "additionalProperties": {
             "type": "number"
+          }
+        },
+        "invalid_share": {
+          "type": "object",
+          "required": [
+            "reference",
+            "candidate"
+          ],
+          "properties": {
+            "reference": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "candidate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "reference",
+              "candidate"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reference": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              },
+              "candidate": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              },
+              "difference": {
+                "type": "number"
+              }
+            }
           }
         }
       }
