@@ -63,13 +63,13 @@ def test_exit_code_fail_and_reports_written(files: dict[str, Path], tmp_path: Pa
         ]
     )
     assert code == EXIT_FAIL
-    doc = json.loads(out_json.read_text())
+    doc = json.loads(out_json.read_text(encoding="utf-8"))
     assert doc["verdict"] == "FAIL"
     assert doc["inputs"]["reference"]["sha256"]
-    assert "FAIL" in out_md.read_text()
+    assert "FAIL" in out_md.read_text(encoding="utf-8")
     # --label alone (no AUC gate in the preset) still reports AUC.
     assert doc["summary"]["auc"]["candidate"] < doc["summary"]["auc"]["reference"]
-    assert "AUC: reference" in out_md.read_text()
+    assert "AUC: reference" in out_md.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

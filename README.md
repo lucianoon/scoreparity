@@ -54,10 +54,10 @@ import scoreparity as sp
 
 cfg = sp.from_dict({"preset": "float-noise", "columns": {"id": "customer_id"}})
 report = sp.compare(reference_df, candidate_df, cfg)
-report.passed          # bool
-report.failed_gates    # ["max_abs_diff", ...]
-report.to_json()       # stable, versioned schema (schema_version = 1)
-report.to_markdown()   # for a PR comment or CI job summary
+report.passed  # bool
+report.failed_gates  # ["max_abs_diff", ...]
+report.to_json()  # stable, versioned schema (schema_version = 1)
+report.to_markdown()  # for a PR comment or CI job summary
 ```
 
 ## Configuration

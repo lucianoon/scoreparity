@@ -118,6 +118,21 @@ def _resolve_config(args: argparse.Namespace) -> ParityConfig:
     return dataclasses.replace(cfg, columns=columns, segments=segments)
 
 
+def _write_stdout(text: str) -> None:
+    """Write to stdout even when its encoding cannot represent the text.
+
+    Windows consoles and CI runners often use cp1252, which cannot encode the report's status
+    icons. A parity gate must never crash on output, so unencodable characters are replaced.
+    """
+    try:
+        sys.stdout.write(text)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        sys.stdout.flush()
+        sys.stdout.buffer.write(text.encode(encoding, errors="replace"))
+        sys.stdout.buffer.flush()
+
+
 def _cmd_compare(args: argparse.Namespace) -> int:
     from scoreparity.compare import compare_files
 
@@ -128,7 +143,7 @@ def _cmd_compare(args: argparse.Namespace) -> int:
     if args.markdown:
         Path(args.markdown).write_text(markdown, encoding="utf-8")
     if not args.quiet:
-        sys.stdout.write(markdown)
+        _write_stdout(markdown)
     return EXIT_PASS if report.passed else EXIT_FAIL
 
 
