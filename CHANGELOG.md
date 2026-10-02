@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-02
+
 ### Security
 
 - Third-party actions pinned to commit SHAs in the workflows and in the composite action;
@@ -44,3 +46,6 @@ All notable changes to this project are documented here. The format follows
 - Project skeleton: packaging, typed package marker, CLI entry point with stable exit codes,
   CI on Linux, Windows and macOS for Python 3.10 to 3.13, minimum-dependency job and wheel
   smoke test.
+
+[Unreleased]: https://github.com/lucianoon/scoreparity/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/lucianoon/scoreparity/releases/tag/v0.1.0
