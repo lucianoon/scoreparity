@@ -47,6 +47,7 @@
             "enum": [
               "coverage",
               "nonfinite",
+              "parity_gate_configured",
               "max_abs_diff",
               "quantile_abs_diff",
               "mean_diff_equivalence",

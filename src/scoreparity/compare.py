@@ -11,8 +11,48 @@ import pandas as pd
 
 from scoreparity.config import ParityConfig
 from scoreparity.errors import InputError
+from scoreparity.gates import GateResult
 from scoreparity.outputs import get_output_kind
 from scoreparity.report import Report
+
+BEHAVIOUR_GATES: dict[str, tuple[str, ...]] = {
+    "score": (
+        "max_abs_diff",
+        "quantile_abs_diff",
+        "mean_diff_equivalence",
+        "decision_flips",
+        "top_k_overlap",
+        "auc_difference",
+    ),
+    "label": (
+        "label_agreement",
+        "transitions",
+        "class_prevalence",
+        "kappa",
+        "quality_difference",
+    ),
+    "labels": ("label_agreement", "transitions", "class_prevalence", "quality_difference"),
+    "probabilities": (
+        "max_abs_diff",
+        "quantile_abs_diff",
+        "mean_diff_equivalence",
+        "tv_distance",
+        "label_agreement",
+        "transitions",
+        "class_prevalence",
+        "kappa",
+        "quality_difference",
+    ),
+}
+
+
+def _checks_behaviour(cfg: ParityConfig) -> bool:
+    if cfg.output.type == "structured":
+        return any(
+            any(getattr(spec.gates, name) is not None for name in BEHAVIOUR_GATES[spec.type])
+            for spec in cfg.output.fields.values()
+        )
+    return any(getattr(cfg.gates, name) is not None for name in BEHAVIOUR_GATES[cfg.output.type])
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -72,6 +112,17 @@ def compare(
     gate_results, summary = get_output_kind(cfg.output.type).compare(
         reference, candidate, cfg, context
     )
+    if not _checks_behaviour(cfg):
+        gate_results.append(
+            GateResult(
+                "parity_gate_configured",
+                False,
+                None,
+                None,
+                "no output-equivalence gate configured; choose a preset or configure "
+                "a score, class or structured-field gate",
+            )
+        )
     return Report(gates=gate_results, summary=summary, config=cfg.to_dict(), inputs=inputs or {})
 
 

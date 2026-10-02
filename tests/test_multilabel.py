@@ -94,6 +94,19 @@ def test_lists_numbers_and_custom_separator() -> None:
     assert sp.compare(ref, cand, config).summary["agreement"] == 1.0
 
 
+def test_transitions_fail_when_no_class_has_enough_rows() -> None:
+    ref = pd.DataFrame({"id": range(10), "tags": ["a"] * 5 + ["b"] * 5})
+    cand = ref.assign(tags=["b"] * 5 + ["a"] * 5)
+    result = sp.compare(
+        ref, cand, cfg({"transitions": {"max_rate": 0.01}}, columns={"score": "tags"})
+    )
+    transition = gate(result, "transitions")
+    assert not result.passed
+    assert transition.value is None
+    assert transition.details["checked_checks"] == 0
+    assert transition.details["skipped_checks"]
+
+
 def test_missing_is_a_missing_output_and_empty_is_the_empty_set() -> None:
     ref = pd.DataFrame({"id": range(3), "tags": ["a", "", None]})
     cand = pd.DataFrame({"id": range(3), "tags": [None, "", None]})

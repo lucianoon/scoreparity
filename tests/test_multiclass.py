@@ -164,6 +164,24 @@ def test_min_class_size_excludes_small_classes_deliberately() -> None:
     assert sp.compare(ref, ref.copy(), cfg).passed  # 'cancelamento' (~5%) is excluded
 
 
+def test_transitions_fail_when_all_classes_are_too_small() -> None:
+    ref = pd.DataFrame({"id": range(10), "label": ["a"] * 5 + ["b"] * 5})
+    cand = ref.assign(label=["b"] * 5 + ["a"] * 5)
+    config = sp.from_dict(
+        {
+            "output": {"type": "label"},
+            "columns": {"score": "label"},
+            "gates": {"transitions": {"max_rate": 0.01}},
+        }
+    )
+    result = sp.compare(ref, cand, config)
+    transition = gate(result, "transitions")
+    assert not result.passed
+    assert transition.value is None
+    assert transition.details["checked_classes"] == 0
+    assert transition.details["skipped_classes"] == ["a", "b"]
+
+
 def test_segment_agreement_is_gated() -> None:
     ref = labels_frame()
     cand = ref.copy()

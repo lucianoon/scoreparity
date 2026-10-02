@@ -181,10 +181,13 @@ def test_property_self_comparison_passes_exact_and_is_order_invariant(
     assert report.summary["identical_share"] == 1.0
 
 
-def test_default_config_only_checks_coverage_and_nonfinite(reference: pd.DataFrame) -> None:
+def test_default_config_cannot_claim_parity_without_output_gate(reference: pd.DataFrame) -> None:
     report = compare(reference, reference.assign(score=0.0), ParityConfig())
-    assert report.passed  # nothing about scores is gated by default; presets/configs add gates
-    assert [g.name for g in report.gates] == ["coverage", "nonfinite"]
+    assert not report.passed
+    assert report.failed_gates == ["parity_gate_configured"]
+    assert [g.name for g in report.gates] == ["coverage", "nonfinite", "parity_gate_configured"]
+    assert not compare(reference, reference.copy()).passed
+    assert compare(reference, reference.copy(), from_dict({"preset": "exact"})).passed
 
 
 def test_many_rows_are_fast_enough() -> None:

@@ -123,11 +123,16 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
             pairs: list[dict[str, Any]] = []
             failing_pairs: list[str] = []
             underpowered: list[str] = []
+            skipped_classes: list[str] = []
+            checked_classes = 0
             worst = 0.0
             for i, src in enumerate(classes):
                 n_i = int(cm[i].sum())
                 if n_i < cfg.min_class_size:
+                    if n_i:
+                        skipped_classes.append(src)
                     continue
+                checked_classes += 1
                 limit = gate_t.per_class.get(src, gate_t.max_rate)
                 for j, dst in enumerate(classes):
                     if i == j:
@@ -156,16 +161,22 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
             results.append(
                 GateResult(
                     "transitions",
-                    not failing_pairs,
-                    worst,
+                    checked_classes > 0 and not failing_pairs,
+                    worst if checked_classes else None,
                     gate_t.max_rate,
-                    f"share of a class's rows that moved to each other class; {level} upper "
-                    "bound (classes with at least min_class_size rows"
-                    + (", some with their own limit)" if gate_t.per_class else ")"),
+                    (
+                        f"share of a class's rows that moved to each other class; {level} upper "
+                        "bound (classes with at least min_class_size rows"
+                        + (", some with their own limit)" if gate_t.per_class else ")")
+                        if checked_classes
+                        else "could not be evaluated: no class reaches min_class_size"
+                    ),
                     {
                         "failing_pairs": failing_pairs[:50],
                         "pairs": sorted(pairs, key=lambda p: -p["rate"])[:50],
                         "underpowered_classes": sorted(set(underpowered)),
+                        "skipped_classes": skipped_classes,
+                        "checked_classes": checked_classes,
                         "rows_needed_per_class": need,
                     },
                 )

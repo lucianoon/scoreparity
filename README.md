@@ -21,7 +21,7 @@ tolerance you declared up front?* It is model-agnostic: it only needs two tables
 ## Quick start
 
 ```bash
-pip install "scoreparity[parquet]"   # not on PyPI yet: pip install git+https://github.com/lucianoon/scoreparity
+pip install "scoreparity[parquet] @ git+https://github.com/lucianoon/scoreparity.git@main"
 
 scoreparity compare \
   --reference scores_v1.parquet \
@@ -32,6 +32,10 @@ scoreparity compare \
 
 Exit codes: **0** equivalent, **1** not equivalent, **2** the comparison could not be made
 (missing columns, duplicated ids, unreadable files). The Markdown report goes to stdout.
+Without a preset or an output-equivalence gate, a comparison still produces a report, but
+fails the `parity_gate_configured` gate (exit code 1): coverage and input validity alone
+cannot establish parity. Class transition gates fail if no class reaches `min_class_size`;
+the report lists the skipped classes so an empty evaluation cannot produce a PASS.
 
 | Output | Flag | For |
 |---|---|---|

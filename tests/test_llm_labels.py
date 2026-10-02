@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator
 from scipy import stats
 
 import scoreparity as sp
-from scoreparity.cli import EXIT_ERROR, EXIT_PASS, main
+from scoreparity.cli import EXIT_ERROR, EXIT_FAIL, EXIT_PASS, main
 from scoreparity.gates_categorical import rows_needed
 from scoreparity.planning import plan_sample, power_at
 from scoreparity.stats_categorical import clopper_pearson
@@ -36,7 +36,11 @@ def llm_cfg(gates: dict[str, Any] | None = None, **extra: Any) -> sp.ParityConfi
                 },
             },
             "columns": {"score": "answer"},
-            "gates": gates or {"invalid_rate": {"max": 0.01}},
+            "gates": gates
+            or {
+                "invalid_rate": {"max": 0.01},
+                "label_agreement": {"min": 0.99},
+            },
             **extra,
         }
     )
@@ -353,6 +357,8 @@ def test_cli_examples_flag(tmp_path: Path) -> None:
         "utf-8",
     )
     args = ["compare", "--reference", str(a), "--candidate", str(b), "--config", str(cfg)]
-    assert main([*args, "--examples", "4", "--json", str(report), "--quiet"]) == EXIT_PASS
-    assert len(json.loads(report.read_text("utf-8"))["summary"]["examples"]) == 4
+    assert main([*args, "--examples", "4", "--json", str(report), "--quiet"]) == EXIT_FAIL
+    doc = json.loads(report.read_text("utf-8"))
+    assert "parity_gate_configured" in doc["failed_gates"]
+    assert len(doc["summary"]["examples"]) == 4
     assert main([*args, "--examples", "100000", "--quiet"]) == EXIT_ERROR
