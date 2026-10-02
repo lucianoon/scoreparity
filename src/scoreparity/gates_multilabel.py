@@ -37,11 +37,13 @@ ADDED = "(added)"
 def indicators(sets: pd.Series, classes: tuple[str, ...]) -> np.ndarray:
     """Rows x classes boolean matrix: does the row's set contain the class?"""
     index = {c: i for i, c in enumerate(classes)}
-    out = np.zeros((len(sets), len(classes)), dtype=bool)
-    for row, labels in enumerate(sets):
+    # The same few sets repeat across rows: one indicator row per distinct set, then gather.
+    codes, uniques = pd.factorize(pd.Series(list(sets), dtype=object))
+    distinct = np.zeros((len(uniques), len(classes)), dtype=bool)
+    for row, labels in enumerate(uniques):
         for label in labels:
-            out[row, index[label]] = True
-    return out
+            distinct[row, index[label]] = True
+    return np.asarray(distinct[codes])
 
 
 def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:

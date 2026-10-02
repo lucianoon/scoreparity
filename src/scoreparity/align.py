@@ -348,14 +348,14 @@ class _SetParser:
     """Turns a cell into a sorted tuple of classes (None = no usable output).
 
     Text is split on the separator, lists are taken as they are; every item is normalised
-    like a single label. Cells repeat a lot (the same few label sets), so text is memoised.
+    like a single label. Cells repeat a lot (the same few label sets), so `column` parses each
+    distinct cell once.
     """
 
     def __init__(self, norm: Normalize | None, separator: str, side: str) -> None:
         self.norm, self.sep, self.side = norm, separator, side
         self.mapping = {norm.key(k): norm.key(v) for k, v in norm.map.items()} if norm else {}
         self.canonical = {norm.key(a): a for a in norm.allowed} if norm else {}
-        self.cache: dict[str, tuple[str, ...] | None] = {}
 
     def item(self, raw: object) -> str | None:
         text = str(raw).lower() if isinstance(raw, bool) else str(raw).strip()
@@ -383,15 +383,28 @@ class _SetParser:
 
     def __call__(self, cell: object) -> tuple[str, ...] | None:
         if isinstance(cell, str):
-            if cell not in self.cache:
-                self.cache[cell] = self.items(list(cell.split(self.sep)))
-            return self.cache[cell]
+            return self.items(list(cell.split(self.sep)))
         if isinstance(cell, (list, tuple, set, frozenset, np.ndarray)):
             return self.items(list(cell))
+        if isinstance(cell, (bytes, bytearray)):
+            return self(cell.decode("utf-8", errors="replace"))
         if cell is None or (np.ndim(cell) == 0 and pd.isna(cell)):  # type: ignore[call-overload]
             invalid = self.norm is not None and bool(self.norm.allowed)
             return (self.norm.invalid,) if invalid and self.norm else None
         return self.items([cell])
+
+
+def _parse_sets(column: pd.Series, parse: _SetParser) -> list[tuple[str, ...] | None]:
+    """Parse every cell, each distinct value once (lists are not hashable: parsed one by one)."""
+    try:
+        codes, uniques = pd.factorize(column, use_na_sentinel=True)
+    except TypeError:
+        return [parse(v) for v in column.tolist()]
+    parsed = np.empty(len(uniques) + 1, dtype=object)
+    for i, value in enumerate(uniques):
+        parsed[i] = parse(value)
+    parsed[-1] = parse(None)  # code -1: missing cells
+    return list(parsed[codes])
 
 
 def align_label_sets(
@@ -417,8 +430,8 @@ def align_label_sets(
     renames = {columns.truth: TRUTH} if columns.truth is not None else {}
     matched, missing, extra = _join(ref, cand, cid, reference, context, extra_cols, renames)
 
-    ref_sets = [_SetParser(normalize, separator, "reference")(v) for v in matched[REF]]
-    cand_sets = [_SetParser(normalize, separator, "candidate")(v) for v in matched[CAND]]
+    ref_sets = _parse_sets(matched[REF], _SetParser(normalize, separator, "reference"))
+    cand_sets = _parse_sets(matched[CAND], _SetParser(normalize, separator, "candidate"))
     ref_ok = np.array([v is not None for v in ref_sets], dtype=bool)
     cand_ok = np.array([v is not None for v in cand_sets], dtype=bool)
     matched = matched.assign(
@@ -433,8 +446,7 @@ def align_label_sets(
     frame[CAND] = [separator.join(v) for v in frame[CAND_SET]]
     observed = {c for v in frame[REF_SET] for c in v} | {c for v in frame[CAND_SET] for c in v}
     if columns.truth is not None:
-        parse = _SetParser(normalize, separator, "truth")
-        truth_sets = [parse(v) for v in frame[TRUTH]]
+        truth_sets = _parse_sets(frame[TRUTH], _SetParser(normalize, separator, "truth"))
         if any(v is None for v in truth_sets):
             raise InputError(f"truth column {columns.truth!r} has missing values in matched rows")
         if normalize is not None and normalize.allowed:
