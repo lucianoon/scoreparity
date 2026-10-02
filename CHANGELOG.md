@@ -31,6 +31,11 @@ All notable changes to this project are documented here. The format follows
   removed/added transitions, per-class prevalence (Tango), invalid labels, exact-set accuracy
   and macro-F1 with a bootstrap over distinct row types; mean Jaccard similarity and a
   per-class table in the reports.
+- Structured outputs (`output.type: structured`): one JSON object per row (text or Parquet
+  struct), with `output.fields` declaring each field's type (`score`, `label`, `labels`),
+  normalisation, ground truth and gates. Gates are reported as `field.gate`
+  (`GateResult.field`, `field` in the JSON report). New top-level `schema_valid_rate` gate;
+  invalid documents are judged once and excluded from field comparisons.
 
 ## [0.2.0] - 2026-10-02
 

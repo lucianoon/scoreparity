@@ -224,6 +224,32 @@ verified per class, pass `--class-share` (the share of the smallest class) to ge
   ids point to sampling noise rather than to a new behaviour. The `stability` gate fails when
   the candidate is less stable than the reference by more than a margin.
 
+## Structured outputs (JSON)
+
+When a model extracts fields (an LLM returning `{"motivo": "fatura", "valor": 120.5,
+"urgente": true}`), declare each field with its type and gates; each field is compared like an
+output of that type and the verdict is the intersection:
+
+```yaml
+output:
+  type: structured           # columns.score holds JSON text (or a Parquet struct)
+  fields:
+    motivo:  {type: label, normalize: {allowed: [fatura, sinal, oferta]},
+              gates: {label_agreement: {min: 0.99}, transitions: {max_rate: 0.01}}}
+    valor:   {type: score, gates: {max_abs_diff: {max: 0.01}}}
+    urgente: {type: label, gates: {kappa: {min: 0.95}}}
+    tags:    {type: labels, required: false, gates: {label_agreement: {min: 0.98}}}
+columns: {id: message_id, score: extraction}
+gates:
+  schema_valid_rate: {max: 0.005}   # not JSON, not an object, or a required field missing
+```
+
+Gates are reported as `field.gate` (`motivo.transitions`). An invalid document is judged once,
+by `schema_valid_rate` and `nonfinite` (exactly one version produced a valid document), and
+field gates compare the rows where both documents are valid. Score fields accept JSON numbers
+only, so `"120.5"` as text shows up as a format change; a field can take its ground truth from
+a column with `truth`.
+
 ## Calibrated tolerances: `scoreparity noise`
 
 Guessing a margin is the weak spot of every equivalence test. Instead, score the **reference**

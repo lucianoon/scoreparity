@@ -5,7 +5,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from scoreparity.report import _fmt
+from scoreparity.report import _fmt, gate_name
 
 
 def render_junit(doc: dict[str, Any], suite_name: str = "scoreparity") -> str:
@@ -28,7 +28,7 @@ def render_junit(doc: dict[str, Any], suite_name: str = "scoreparity") -> str:
     ):
         ET.SubElement(props, "property", name=key, value=str(value))
     for g in gates:
-        case = ET.SubElement(suite, "testcase", classname=suite_name, name=g["name"])
+        case = ET.SubElement(suite, "testcase", classname=suite_name, name=gate_name(g))
         summary = f"value {_fmt(g['value'])}, threshold {_fmt(g['threshold'])}: {g['description']}"
         if not g["passed"]:
             failure = ET.SubElement(case, "failure", message=summary, type="ParityGateFailed")

@@ -11,7 +11,7 @@ import math
 from html import escape
 from typing import Any
 
-from scoreparity.report import _fmt
+from scoreparity.report import _fmt, gate_name
 
 _CSS = """
 :root {
@@ -441,11 +441,8 @@ def _examples(doc: dict[str, Any]) -> str:
     )
 
 
-def render_html(doc: dict[str, Any]) -> str:
-    """Render a JSON report document (see `Report.to_dict`) as a standalone HTML page."""
-    passed = doc["verdict"] == "PASS"
-    s = doc["summary"]
-    facts = [(f"{s['n_matched_finite']:,}", "rows compared")]
+def _facts(s: dict[str, Any]) -> list[tuple[str, str]]:
+    facts = [(f"{s.get('n_matched_finite', 0):,}", "rows compared")]
     if "identical_share" in s:
         facts.append((f"{100 * s['identical_share']:.2f}%", "identical outputs"))
         facts.append((_fmt((s.get("abs_diff_quantiles") or {}).get("1.0")), "largest |difference|"))
@@ -463,8 +460,49 @@ def render_html(doc: dict[str, Any]) -> str:
     auc = s.get("auc")
     if auc:
         facts.append((_fmt(auc["delta"]), "AUC difference"))
+    if "schema_valid" in s:
+        facts.append((f"{100 * s['schema_valid']['candidate']:.3f}%", "valid documents"))
+    return facts
+
+
+def _fact_cards(facts: list[tuple[str, str]]) -> str:
+    return (
+        '<div class="facts">'
+        + "".join(
+            f'<div class="fact"><b>{escape(v)}</b><span>{escape(k)}</span></div>' for v, k in facts
+        )
+        + "</div>"
+    )
+
+
+def _sections(doc: dict[str, Any]) -> str:
+    return (
+        f"{_histogram(doc)}{_confusion(doc)}{_label_changes(doc)}{_segments(doc)}{_examples(doc)}"
+    )
+
+
+def _fields(doc: dict[str, Any]) -> str:
+    """Structured outputs: one block per field, built from the field's own summary and gates."""
+    out = []
+    for name, sub in (doc["summary"].get("fields") or {}).items():
+        sub_doc = {
+            **doc,
+            "summary": sub,
+            "gates": [g for g in doc["gates"] if g.get("field") == name],
+        }
+        out.append(
+            f"<h2>Field <code>{escape(str(name))}</code> ({escape(str(sub.get('type', '')))})</h2>"
+            f"{_fact_cards(_facts(sub))}{_sections(sub_doc)}"
+        )
+    return "".join(out)
+
+
+def render_html(doc: dict[str, Any]) -> str:
+    """Render a JSON report document (see `Report.to_dict`) as a standalone HTML page."""
+    passed = doc["verdict"] == "PASS"
+    facts = _facts(doc["summary"])
     gates_rows = "".join(
-        f"<tr><td><code>{escape(g['name'])}</code></td><td>{_status(g['passed'])}</td>"
+        f"<tr><td><code>{escape(gate_name(g))}</code></td><td>{_status(g['passed'])}</td>"
         f"<td class='num'>{escape(_fmt(g['value']))}</td>"
         f"<td class='num'>{escape(_fmt(g['threshold']))}</td>"
         f"<td>{escape(g['description'])}</td></tr>"
@@ -486,15 +524,11 @@ def render_html(doc: dict[str, Any]) -> str:
         f"declared tolerance?{preset_note}</p>"
         f'<div class="verdict {"pass" if passed else "fail"}">'
         f"{'✓ PASS' if passed else '✕ FAIL'}</div>"
-        '<div class="facts">'
-        + "".join(
-            f'<div class="fact"><b>{escape(v)}</b><span>{escape(k)}</span></div>' for v, k in facts
-        )
-        + "</div><h2>Gates</h2><div class='card'><table><tr><th>Gate</th><th>Result</th>"
+        + _fact_cards(facts)
+        + "<h2>Gates</h2><div class='card'><table><tr><th>Gate</th><th>Result</th>"
         "<th class='num'>Value</th><th class='num'>Threshold</th><th>What it checks</th></tr>"
         f"{gates_rows}</table></div>"
-        f"{_histogram(doc)}{_confusion(doc)}{_label_changes(doc)}{_segments(doc)}"
-        f"{_examples(doc)}"
+        f"{_sections(doc)}{_fields(doc)}"
         f"<footer>{inputs}<div>scoreparity {escape(doc['environment']['scoreparity'])} · "
         f"report schema {doc['schema_version']}</div></footer></main></body></html>"
     )
