@@ -249,6 +249,24 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
     return results
 
 
+def _decade_histogram(abs_diff: np.ndarray) -> dict[str, Any]:
+    """Counts of |diff| per power of ten: bucket e holds values in [10**e, 10**(e+1)).
+
+    Score differences span many orders of magnitude (1e-16 float noise to 1e-1 real changes),
+    so linear bins would put everything in the first bin. Exact zeros get their own bucket.
+    """
+    zero = int((abs_diff == 0).sum())
+    positive = abs_diff[abs_diff > 0]
+    exponents = np.floor(np.log10(positive)).astype(np.int64)
+    values, counts = np.unique(exponents, return_counts=True)
+    return {
+        "zero": zero,
+        "decades": [
+            {"exponent": int(e), "count": int(c)} for e, c in zip(values, counts, strict=True)
+        ],
+    }
+
+
 def summary(alignment: Alignment) -> dict[str, Any]:
     """Descriptive statistics that are useful whether or not a gate uses them."""
     frame = alignment.frame
@@ -269,6 +287,7 @@ def summary(alignment: Alignment) -> dict[str, Any]:
         }
         out["mean_diff"] = float(frame[DIFF].mean())
         out["identical_share"] = float((frame[DIFF] == 0).mean())
+        out["abs_diff_histogram"] = _decade_histogram(abs_diff.to_numpy(np.float64))
         # Rank correlation is undefined when either side is constant.
         defined = frame[REF].nunique() > 1 and frame[CAND].nunique() > 1
         out["spearman"] = (

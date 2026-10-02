@@ -1,0 +1,85 @@
+name: Action self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # the PASS case demonstrates the sticky PR comment
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Generate example data
+        run: |
+          python -m pip install --quiet numpy pandas
+          python examples/make_example_data.py "$RUNNER_TEMP/data"
+
+      - name: Equivalent candidate passes
+        id: same
+        uses: ./
+        with:
+          reference: ${{ runner.temp }}/data/reference.csv
+          candidate: ${{ runner.temp }}/data/candidate_same.csv
+          preset: float-noise
+          args: --label label --segment plan
+          artifact-name: selftest-same
+
+      - name: Drifted segment fails (report only)
+        id: drift
+        uses: ./
+        with:
+          reference: ${{ runner.temp }}/data/reference.csv
+          candidate: ${{ runner.temp }}/data/candidate_drift.csv
+          preset: float-noise
+          args: --segment plan
+          fail-on-mismatch: "false"
+          comment-on-pr: "false"
+          artifact-name: selftest-drift
+
+      - name: Broken candidate fails the job
+        id: broken
+        continue-on-error: true
+        uses: ./
+        with:
+          reference: ${{ runner.temp }}/data/reference.csv
+          candidate: ${{ runner.temp }}/data/candidate_broken.csv
+          preset: float-noise
+          comment-on-pr: "false"
+          artifact-name: selftest-broken
+
+      - name: Unreadable input is an error even when mismatches are allowed
+        id: error
+        continue-on-error: true
+        uses: ./
+        with:
+          reference: ${{ runner.temp }}/data/does-not-exist.csv
+          candidate: ${{ runner.temp }}/data/candidate_same.csv
+          fail-on-mismatch: "false"
+          comment-on-pr: "false"
+          artifact-name: selftest-error
+
+      - name: Check outcomes
+        env:
+          SAME: ${{ steps.same.outputs.verdict }}
+          DRIFT: ${{ steps.drift.outputs.verdict }}
+          DRIFT_OUTCOME: ${{ steps.drift.outcome }}
+          BROKEN: ${{ steps.broken.outputs.verdict }}
+          BROKEN_OUTCOME: ${{ steps.broken.outcome }}
+          ERROR: ${{ steps.error.outputs.verdict }}
+          ERROR_OUTCOME: ${{ steps.error.outcome }}
+        run: |
+          set -x
+          [ "$SAME" = "PASS" ]
+          [ "$DRIFT" = "FAIL" ] && [ "$DRIFT_OUTCOME" = "success" ]
+          [ "$BROKEN" = "FAIL" ] && [ "$BROKEN_OUTCOME" = "failure" ]
+          [ "$ERROR" = "ERROR" ] && [ "$ERROR_OUTCOME" = "failure" ]

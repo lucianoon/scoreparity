@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Self-contained HTML report (`--html`): order-of-magnitude histogram of the differences and a
+  per-segment confidence-interval chart, light and dark mode, all user data escaped.
+- JUnit XML report (`--junit`): one test case per gate.
+- `scoreparity render`: re-render a saved JSON report; exit code mirrors its verdict.
+- GitHub Action (`action.yml`): job summary, sticky pull-request comment, report artifact,
+  `verdict`/`exit-code`/`report-dir` outputs; inputs never interpolated into shell scripts.
+- `examples/make_example_data.py`: deterministic example data for demos and the action self-test.
+- `summary.abs_diff_histogram` in the JSON report.
 - `scoreparity compare` and `scoreparity init` commands; Python API `compare`, `compare_files`.
 - Strict YAML configuration (unknown keys are errors, YAML 1.1 exponent strings such as `1e-5`
   are read as numbers) with presets `exact`, `float-noise` and `quantization`.
