@@ -1,0 +1,95 @@
+[project]
+name = "scoreparity"
+dynamic = ["version"]
+description = "Score parity gates for ML model changes: prove that a refactor, upgrade, migration or quantization did not change what your model outputs."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Luciano de Oliveira Nunes" }]
+requires-python = ">=3.10"
+keywords = ["machine-learning", "mlops", "model-validation", "equivalence-testing", "ci"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=14"]
+
+[project.scripts]
+scoreparity = "scoreparity.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/lucianoon/scoreparity"
+Issues = "https://github.com/lucianoon/scoreparity/issues"
+Changelog = "https://github.com/lucianoon/scoreparity/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "packaging>=23",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs>=2.0",
+    "types-PyYAML>=6.0",
+    "pyarrow>=14",
+]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/scoreparity/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scoreparity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["scoreparity"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "N", "PT", "C4", "PIE", "RET"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true
