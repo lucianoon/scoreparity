@@ -26,6 +26,11 @@ All notable changes to this project are documented here. The format follows
 - Replicas (`columns.replica`, `--replica`): several answers per id compared by majority class;
   the report shows unstable ids per version and how many changes fall on them. New `stability`
   gate (Tango upper bound of the increase in unstable ids).
+- Multi-label outputs (`output.type: labels`): a set of classes per row, as separated text
+  (`output.label_separator`) or lists (Parquet list columns). Set agreement, per-class
+  removed/added transitions, per-class prevalence (Tango), invalid labels, exact-set accuracy
+  and macro-F1 with a bootstrap over distinct row types; mean Jaccard similarity and a
+  per-class table in the reports.
 
 ## [0.2.0] - 2026-10-02
 

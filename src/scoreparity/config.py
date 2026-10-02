@@ -44,7 +44,7 @@ class Columns:
 
 # Kinds of model output a comparison can handle. Each kind has its own alignment rules and
 # its own set of applicable gates (see SUPPORTED_GATES below).
-OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities")
+OUTPUT_TYPES: tuple[str, ...] = ("score", "label", "probabilities", "labels")
 
 
 @dataclass(frozen=True)
@@ -73,13 +73,16 @@ class Output:
 
     - score: one number per row (columns.score / reference_score / candidate_score);
     - label: one predicted class per row (same columns, holding class names);
-    - probabilities: one probability column per class, named `<prob_prefix><class>`.
+    - probabilities: one probability column per class, named `<prob_prefix><class>`;
+    - labels: a set of classes per row (multi-label), as text separated by `label_separator`
+      or as a list (for example a Parquet list column). An empty cell is the empty set.
     """
 
     type: str = "score"
     prob_prefix: str = "p_"
     prob_sum_tolerance: float = 1e-3
     normalize: Normalize | None = None
+    label_separator: str = "|"
 
 
 @dataclass(frozen=True)
@@ -284,7 +287,7 @@ _CLASS_GATES = frozenset(
     {"label_agreement", "transitions", "class_prevalence", "kappa", "quality_difference"}
 )
 QUALITY_METRICS = ("accuracy", "macro_f1")
-NORMALIZED_TYPES = ("label",)
+NORMALIZED_TYPES = ("label", "labels")
 
 # Which gates make sense for each output type. A gate configured for an output type that does
 # not support it is a configuration error, never silently ignored.
@@ -303,6 +306,19 @@ SUPPORTED_GATES: dict[str, frozenset[str]] = {
         }
     )
     | _CLASS_GATES,
+    # Sets of classes: agreement means the same set; transitions, prevalence and quality are
+    # computed per class (present or absent in each row). Kappa is not defined for sets.
+    "labels": frozenset(
+        {
+            "coverage",
+            "nonfinite",
+            "invalid_rate",
+            "label_agreement",
+            "transitions",
+            "class_prevalence",
+            "quality_difference",
+        }
+    ),
 }
 
 T = TypeVar("T")
@@ -433,6 +449,7 @@ def _validate(cfg: ParityConfig) -> None:
         require(cfg.columns.label is not None, "gates.auc_difference requires columns.label")
     require(cfg.min_class_size >= 1, "min_class_size must be >= 1")
     require(cfg.output.prob_prefix != "", "output.prob_prefix must not be empty")
+    require(cfg.output.label_separator.strip() != "", "output.label_separator must not be blank")
     require(0 < cfg.output.prob_sum_tolerance < 1, "output.prob_sum_tolerance must be in (0, 1)")
     if g.label_agreement:
         require(0 <= g.label_agreement.min <= 1, "gates.label_agreement.min must be in [0, 1]")
@@ -516,10 +533,10 @@ def from_dict(raw: Mapping[str, Any]) -> ParityConfig:
     output = _build_output(raw.get("output") or {})
     gate_raw: dict[str, Any] = {}
     if preset:
-        if output.type == "label":
+        if output.type in ("label", "labels"):
             raise ConfigError(
-                "presets define score tolerances and do not apply to output.type 'label'; "
-                "configure the class gates explicitly"
+                "presets define score tolerances and do not apply to output.type "
+                f"{output.type!r}; configure the class gates explicitly"
             )
         supported = SUPPORTED_GATES.get(output.type, frozenset())
         gate_raw = {k: v for k, v in preset_gates(preset).items() if k in supported}

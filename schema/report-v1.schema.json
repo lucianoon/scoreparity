@@ -364,6 +364,31 @@
               "maximum": 1
             }
           }
+        },
+        "jaccard_mean": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "label_changes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "removed",
+              "added"
+            ],
+            "properties": {
+              "removed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "added": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
         }
       }
     },

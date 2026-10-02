@@ -337,6 +337,121 @@ def align_labels(
     return Alignment(**{**alignment.__dict__, "classes": tuple(sorted(observed))})
 
 
+# --------------------------------------------------------------------------- sets of labels
+
+REF_SET = "__ref_set"  # tuple of classes per row, labels outputs
+CAND_SET = "__cand_set"
+TRUTH_SET = "__truth_set"
+
+
+class _SetParser:
+    """Turns a cell into a sorted tuple of classes (None = no usable output).
+
+    Text is split on the separator, lists are taken as they are; every item is normalised
+    like a single label. Cells repeat a lot (the same few label sets), so text is memoised.
+    """
+
+    def __init__(self, norm: Normalize | None, separator: str, side: str) -> None:
+        self.norm, self.sep, self.side = norm, separator, side
+        self.mapping = {norm.key(k): norm.key(v) for k, v in norm.map.items()} if norm else {}
+        self.canonical = {norm.key(a): a for a in norm.allowed} if norm else {}
+        self.cache: dict[str, tuple[str, ...] | None] = {}
+
+    def item(self, raw: object) -> str | None:
+        text = str(raw).lower() if isinstance(raw, bool) else str(raw).strip()
+        if text == "":
+            return None
+        norm = self.norm
+        if norm is None:
+            return text
+        key = self.mapping.get(norm.key(text), norm.key(text))
+        if self.canonical:
+            return self.canonical.get(key, norm.invalid)
+        return key
+
+    def items(self, values: list[object]) -> tuple[str, ...]:
+        out = set()
+        for raw in values:
+            if isinstance(raw, str) and self.sep in raw:
+                raise InputError(
+                    f"{self.side}: label {raw!r} in a list contains the separator {self.sep!r}"
+                )
+            item = self.item(raw)
+            if item is not None:
+                out.add(item)
+        return tuple(sorted(out))
+
+    def __call__(self, cell: object) -> tuple[str, ...] | None:
+        if isinstance(cell, str):
+            if cell not in self.cache:
+                self.cache[cell] = self.items(list(cell.split(self.sep)))
+            return self.cache[cell]
+        if isinstance(cell, (list, tuple, set, frozenset, np.ndarray)):
+            return self.items(list(cell))
+        if cell is None or (np.ndim(cell) == 0 and pd.isna(cell)):  # type: ignore[call-overload]
+            invalid = self.norm is not None and bool(self.norm.allowed)
+            return (self.norm.invalid,) if invalid and self.norm else None
+        return self.items([cell])
+
+
+def align_label_sets(
+    reference: pd.DataFrame,
+    candidate: pd.DataFrame,
+    columns: Columns,
+    segments: tuple[str, ...] = (),
+    context: pd.DataFrame | None = None,
+    normalize: Normalize | None = None,
+    separator: str = "|",
+) -> Alignment:
+    """Align two tables holding a set of classes per row (multi-label outputs).
+
+    `REF`/`CAND` hold the set as sorted classes joined by the separator (equal text means the
+    same set), `REF_SET`/`CAND_SET` the tuples. A missing cell is a missing output (unless
+    `normalize.allowed` is set: then it is the invalid class); an empty cell is the empty set.
+    """
+    cid = columns.id
+    _check_ids(reference, candidate, cid, [columns.reference], [columns.candidate])
+    ref = pd.DataFrame({cid: reference[cid], REF: reference[columns.reference]})
+    cand = pd.DataFrame({cid: candidate[cid], CAND: candidate[columns.candidate]})
+    extra_cols = [c for c in (columns.truth, *segments) if c is not None]
+    renames = {columns.truth: TRUTH} if columns.truth is not None else {}
+    matched, missing, extra = _join(ref, cand, cid, reference, context, extra_cols, renames)
+
+    ref_sets = [_SetParser(normalize, separator, "reference")(v) for v in matched[REF]]
+    cand_sets = [_SetParser(normalize, separator, "candidate")(v) for v in matched[CAND]]
+    ref_ok = np.array([v is not None for v in ref_sets], dtype=bool)
+    cand_ok = np.array([v is not None for v in cand_sets], dtype=bool)
+    matched = matched.assign(
+        **{
+            REF_SET: pd.Series(ref_sets, index=matched.index, dtype=object),
+            CAND_SET: pd.Series(cand_sets, index=matched.index, dtype=object),
+        }
+    )
+    alignment = _finish(matched, ref_ok, cand_ok, reference, candidate, missing, extra, segments)
+    frame = alignment.frame
+    frame[REF] = [separator.join(v) for v in frame[REF_SET]]
+    frame[CAND] = [separator.join(v) for v in frame[CAND_SET]]
+    observed = {c for v in frame[REF_SET] for c in v} | {c for v in frame[CAND_SET] for c in v}
+    if columns.truth is not None:
+        parse = _SetParser(normalize, separator, "truth")
+        truth_sets = [parse(v) for v in frame[TRUTH]]
+        if any(v is None for v in truth_sets):
+            raise InputError(f"truth column {columns.truth!r} has missing values in matched rows")
+        if normalize is not None and normalize.allowed:
+            bad = [v for v in truth_sets if v is not None and normalize.invalid in v]
+            if bad:
+                raise InputError(
+                    f"truth column {columns.truth!r} has {len(bad)} rows with classes outside "
+                    "output.normalize.allowed; ground truth must use valid classes"
+                )
+        frame[TRUTH_SET] = pd.Series(truth_sets, index=frame.index, dtype=object)
+        frame[TRUTH] = [separator.join(v or ()) for v in truth_sets]
+        observed |= {c for v in truth_sets for c in (v or ())}
+    if normalize is not None:
+        observed |= set(normalize.allowed)
+    return Alignment(**{**alignment.__dict__, "classes": tuple(sorted(observed))})
+
+
 # --------------------------------------------------------------------------- probabilities
 
 

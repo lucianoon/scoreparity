@@ -36,6 +36,7 @@ class OutputKind(Protocol):
 
 def get_output_kind(name: str) -> OutputKind:
     from scoreparity.outputs.label import LabelOutput
+    from scoreparity.outputs.labels import LabelsOutput
     from scoreparity.outputs.probabilities import ProbabilitiesOutput
     from scoreparity.outputs.score import ScoreOutput
 
@@ -43,5 +44,6 @@ def get_output_kind(name: str) -> OutputKind:
         "score": ScoreOutput(),
         "label": LabelOutput(),
         "probabilities": ProbabilitiesOutput(),
+        "labels": LabelsOutput(),
     }
     return kinds[name]

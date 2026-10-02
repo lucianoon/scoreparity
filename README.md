@@ -153,6 +153,14 @@ For `probabilities`, `max_abs_diff`, `quantile_abs_diff` and `mean_diff_equivale
 every class column (all must pass), class gates use each row's most probable class, and the
 `exact`/`float-noise`/`quantization` presets keep only the gates that apply.
 
+**Multi-label outputs** (`output.type: labels`): each row holds a *set* of classes, as text
+separated by `output.label_separator` (default `|`, order and duplicates ignored) or as a list
+(for example a Parquet list column); an empty cell is the empty set. `label_agreement` then
+means the same set, `transitions` checks per class the share of rows that lost it
+(`fatura -> (removed)`) or gained it (`(added) -> fatura`), `class_prevalence` compares the
+share of rows having each class, and `quality_difference` uses the exact-set accuracy or the
+macro-F1 over classes. The report adds the mean Jaccard similarity and a per-class table.
+
 Class gates make a statement about the **population** the rows were sampled from, so they need
 enough rows: proving "at most 1% of a class moves" with zero observed moves needs 299 rows of
 that class. When there are not enough, the gate fails and the report says how many rows are

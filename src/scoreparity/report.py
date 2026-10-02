@@ -110,6 +110,12 @@ def _code(value: Any) -> str:
     return f"`{text[:120]}`"
 
 
+def _cell(value: Any) -> str:
+    """A user-provided value inside a Markdown table cell: code, pipes escaped, never empty."""
+    text = _fmt(value)
+    return _code(text).replace("|", r"\|") if text != "" else "(empty)"
+
+
 def render_markdown(doc: dict[str, Any]) -> str:
     """Markdown suited to a pull-request comment or a CI job summary."""
     icon = "✅" if doc["verdict"] == "PASS" else "❌"
@@ -147,7 +153,14 @@ def render_markdown(doc: dict[str, Any]) -> str:
             f"AUC: reference {auc['reference']:.5f}, candidate {auc['candidate']:.5f} "
             f"(difference {_fmt(auc['delta'])}, 90% CI {_fmt(lo)} to {_fmt(hi)}).",
         ]
-    if "agreement" in s:
+    if "jaccard_mean" in s:
+        lines += [
+            "",
+            f"Same set of labels: {100 * s['agreement']:.3f}% of rows over "
+            f"{len(s.get('classes', []))} classes; mean Jaccard similarity "
+            f"{_fmt(s['jaccard_mean'])}.",
+        ]
+    elif "agreement" in s:
         lines += [
             "",
             f"Class agreement: {100 * s['agreement']:.3f}% over {len(s.get('classes', []))} "
@@ -221,8 +234,8 @@ def render_markdown(doc: dict[str, Any]) -> str:
         ]
         for e in shown:
             lines.append(
-                f"| {_code(e['id'])} | {_code(_fmt(e['reference']))} | "
-                f"{_code(_fmt(e['candidate']))} |" + (f" {_fmt(e[extra])} |" if extra else "")
+                f"| {_cell(e['id'])} | {_cell(e['reference'])} | {_cell(e['candidate'])} |"
+                + (f" {_fmt(e[extra])} |" if extra else "")
             )
     lines += ["", f"<sub>scoreparity {doc['environment']['scoreparity']}</sub>"]
     return "\n".join(lines) + "\n"

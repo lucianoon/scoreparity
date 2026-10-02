@@ -14,7 +14,8 @@ one-sided bound ("at least", "at most") uses level 1 - alpha.
 - Cohen's kappa with the large-sample variance of Fleiss, Cohen & Everitt (1969).
 - Macro-F1 difference by nonparametric bootstrap, computed on the K^3 distinct
   (truth, reference, candidate) row types: resampling rows is a multinomial draw over those
-  types, so the cost does not grow with the number of rows.
+  types, so the cost does not grow with the number of rows. The multi-label version does the
+  same over the distinct (truth set, reference set, candidate set) row types.
 """
 
 from __future__ import annotations
@@ -187,4 +188,51 @@ def macro_f1_difference(
     )
     deltas = f1_for(draws, c_cls) - f1_for(draws, r_cls)
     low, high = np.quantile(deltas, [alpha, 1 - alpha])
+    return Interval(estimate, float(low), float(high))
+
+
+def macro_f1_sets(truth: NDArray[np.bool_], pred: NDArray[np.bool_]) -> float:
+    """Macro-F1 for multi-label outputs: rows x classes indicator matrices, one F1 per class."""
+    t, p = truth.astype(np.float64), pred.astype(np.float64)
+    tp = (t * p).sum(axis=0)
+    fp = ((1 - t) * p).sum(axis=0)
+    fn = (t * (1 - p)).sum(axis=0)
+    return float(_macro_f1(tp, fp, fn))
+
+
+def macro_f1_sets_difference(
+    truth: NDArray[np.bool_],
+    reference: NDArray[np.bool_],
+    candidate: NDArray[np.bool_],
+    counts: NDArray[np.int64],
+    alpha: float = 0.05,
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> Interval:
+    """Macro-F1(candidate) - Macro-F1(reference) for sets, percentile bootstrap at 1-2*alpha.
+
+    Inputs are one row per distinct row *type* (types x classes indicators) and how many rows
+    have that type. Resampling rows is a multinomial draw over the types; replicates are drawn
+    in chunks so memory stays bounded when there are many distinct types.
+    """
+    t = truth.astype(np.float64)
+    parts = {}
+    for name, pred in (("ref", reference), ("cand", candidate)):
+        p = pred.astype(np.float64)
+        parts[name] = (t * p, (1 - t) * p, t * (1 - p))
+
+    def f1(weights: NDArray[np.float64], name: str) -> NDArray[np.float64]:
+        tp, fp, fn = parts[name]
+        return _macro_f1(weights @ tp, weights @ fp, weights @ fn)
+
+    observed = counts[None, :].astype(np.float64)
+    estimate = float(f1(observed, "cand")[0] - f1(observed, "ref")[0])
+    rng = np.random.default_rng(seed)
+    total, probs = int(counts.sum()), counts / counts.sum()
+    chunk = max(1, min(n_boot, 5_000_000 // max(1, len(counts))))
+    deltas = []
+    for start in range(0, n_boot, chunk):
+        draws = rng.multinomial(total, probs, size=min(chunk, n_boot - start)).astype(np.float64)
+        deltas.append(f1(draws, "cand") - f1(draws, "ref"))
+    low, high = np.quantile(np.concatenate(deltas), [alpha, 1 - alpha])
     return Interval(estimate, float(low), float(high))

@@ -384,6 +384,35 @@ def _confusion(doc: dict[str, Any]) -> str:
     return intro + f'<div class="card">{legend}{"".join(svg)}{table}</div>'
 
 
+def _label_changes(doc: dict[str, Any]) -> str:
+    """Multi-label outputs: per class, how often it is present, how many rows lost or gained it."""
+    s = doc["summary"]
+    changes, prevalence = s.get("label_changes"), s.get("prevalence") or {}
+    if not changes:
+        return ""
+    gate = next((g for g in doc["gates"] if g["name"] == "transitions"), None)
+    failing = set(gate["details"].get("failing_pairs", [])) if gate else set()
+    rows = []
+    for cls, change in changes.items():
+        bad = any(p.startswith(f"{cls} -> ") or p.endswith(f" -> {cls}") for p in failing)
+        prev = prevalence.get(cls, {})
+        rows.append(
+            f"<tr><td>{escape(str(cls))}</td>"
+            f"<td class='num'>{100 * prev.get('reference', 0):.2f}%</td>"
+            f"<td class='num'>{100 * prev.get('candidate', 0):.2f}%</td>"
+            f"<td class='num'>{change['removed']:,}</td><td class='num'>{change['added']:,}</td>"
+            f"<td>{_status(not bad) if gate else ''}</td></tr>"
+        )
+    return (
+        "<h2>Which labels changed?</h2>"
+        '<p class="lead">Per class: share of rows that have it in each version, and how many '
+        "rows lost it or gained it.</p><div class='card'><table><tr><th>class</th>"
+        "<th class='num'>reference</th><th class='num'>candidate</th>"
+        "<th class='num'>removed</th><th class='num'>added</th><th>transitions</th></tr>"
+        f"{''.join(rows)}</table></div>"
+    )
+
+
 def _examples(doc: dict[str, Any]) -> str:
     examples = doc["summary"].get("examples")
     if not examples:
@@ -394,7 +423,8 @@ def _examples(doc: dict[str, Any]) -> str:
     )
     rows = "".join(
         f"<tr><td><code>{escape(str(e['id']))}</code></td>"
-        f"<td>{escape(_fmt(e['reference']))}</td><td>{escape(_fmt(e['candidate']))}</td>"
+        f"<td>{escape(_fmt(e['reference']) or '(empty)')}</td>"
+        f"<td>{escape(_fmt(e['candidate']) or '(empty)')}</td>"
         + (f"<td class='num'>{escape(_fmt(e[extra]))}</td>" if extra else "")
         + "</tr>"
         for e in examples
@@ -419,7 +449,10 @@ def render_html(doc: dict[str, Any]) -> str:
     if "identical_share" in s:
         facts.append((f"{100 * s['identical_share']:.2f}%", "identical outputs"))
         facts.append((_fmt((s.get("abs_diff_quantiles") or {}).get("1.0")), "largest |difference|"))
-    if "agreement" in s:
+    if "jaccard_mean" in s:
+        facts.append((f"{100 * s['agreement']:.3f}%", "same set of labels"))
+        facts.append((_fmt(s["jaccard_mean"]), "mean Jaccard similarity"))
+    elif "agreement" in s:
         facts.append((f"{100 * s['agreement']:.3f}%", "same class"))
         facts.append((_fmt(s.get("kappa")), "Cohen's kappa"))
     if "stability" in s:
@@ -460,7 +493,8 @@ def render_html(doc: dict[str, Any]) -> str:
         + "</div><h2>Gates</h2><div class='card'><table><tr><th>Gate</th><th>Result</th>"
         "<th class='num'>Value</th><th class='num'>Threshold</th><th>What it checks</th></tr>"
         f"{gates_rows}</table></div>"
-        f"{_histogram(doc)}{_confusion(doc)}{_segments(doc)}{_examples(doc)}"
+        f"{_histogram(doc)}{_confusion(doc)}{_label_changes(doc)}{_segments(doc)}"
+        f"{_examples(doc)}"
         f"<footer>{inputs}<div>scoreparity {escape(doc['environment']['scoreparity'])} · "
         f"report schema {doc['schema_version']}</div></footer></main></body></html>"
     )
