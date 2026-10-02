@@ -111,6 +111,30 @@ def test_invalid_documents_are_judged_once_at_the_top() -> None:
     assert report.summary["fields"]["motivo"]["n_matched_finite"] == 1995
 
 
+def test_all_invalid_documents_return_a_failed_report() -> None:
+    ref = pd.DataFrame({"id": [1, 2], "out": ["bad", "bad"]})
+    report = sp.compare(
+        ref,
+        ref.copy(),
+        cfg(
+            {"valor": {"type": "score", "gates": {"max_abs_diff": {"max": 0.01}}}},
+            gates={"schema_valid_rate": {"max": 0.1}},
+        ),
+    )
+    assert report.failed_gates == ["schema_valid_rate", "valor.max_abs_diff"]
+    assert report.summary["fields"]["valor"]["n_matched_finite"] == 0
+    assert "no valid matched documents" in gate(report, "valor.max_abs_diff").description
+    assert not list(Draft202012Validator(SCHEMA).iter_errors(report.to_dict()))
+    report.to_html()
+    report.to_markdown()
+
+
+def test_structured_fields_need_a_behavior_gate_for_parity() -> None:
+    ref = pd.DataFrame({"id": [1], "out": ['{"flag": "a"}']})
+    result = sp.compare(ref, ref.copy(), cfg({"flag": {"type": "label"}}))
+    assert result.failed_gates == ["parity_gate_configured"]
+
+
 def test_optional_fields_may_be_missing_but_count_as_missing_outputs() -> None:
     ref = documents(500)
     cand = edit(ref, ref.index[:2], lambda d: {k: v for k, v in d.items() if k != "tags"})

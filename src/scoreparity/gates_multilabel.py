@@ -75,6 +75,8 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
         else:
             failing: list[str] = []
             underpowered: list[str] = []
+            skipped_checks: list[str] = []
+            checked_checks = 0
             pairs: list[dict[str, Any]] = []
             worst = 0.0
             for j, cls in enumerate(classes):
@@ -86,7 +88,9 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
                 ):
                     n_base = int(base.sum())
                     if n_base < cfg.min_class_size:
+                        skipped_checks.append(name)
                         continue
+                    checked_checks += 1
                     count = int(moved.sum())
                     upper = clopper_pearson(count, n_base, cfg.alpha)[1]
                     worst = max(worst, count / n_base)
@@ -108,15 +112,21 @@ def evaluate(alignment: Alignment, cfg: ParityConfig) -> list[GateResult]:
             results.append(
                 GateResult(
                     "transitions",
-                    not failing,
-                    worst,
+                    checked_checks > 0 and not failing,
+                    worst if checked_checks else None,
                     gate_t.max_rate,
-                    f"per class, share of the rows that lost it or gained it; {level} upper "
-                    "bound (min_class_size rows on the side measured)",
+                    (
+                        f"per class, share of the rows that lost it or gained it; {level} upper "
+                        "bound (min_class_size rows on the side measured)"
+                        if checked_checks
+                        else "could not be evaluated: no class reaches min_class_size"
+                    ),
                     {
                         "failing_pairs": failing[:50],
                         "pairs": sorted(pairs, key=lambda p: -p["rate"])[:50],
                         "underpowered_classes": sorted(set(underpowered)),
+                        "skipped_checks": skipped_checks,
+                        "checked_checks": checked_checks,
                         "rows_needed_per_class": rows_needed(gate_t.max_rate, cfg.alpha),
                     },
                 )

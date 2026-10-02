@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Comparisons without an output-equivalence gate now fail `parity_gate_configured` instead
+  of claiming parity from coverage and input validity alone.
+- Class and multi-label `transitions` fail as unverifiable when `min_class_size` excludes
+  every class/check; skipped classes are included in the report.
+- Structured outputs return a failed report when no valid documents remain for field gates,
+  instead of raising an input error. The quick start installs from GitHub with the Parquet
+  extra while the package is not on PyPI.
+
 ## [0.3.0] - 2026-10-02
 
 ### Added

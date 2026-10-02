@@ -170,6 +170,18 @@ class StructuredOutput:
         ref_keep = ~reference[cid].isin(invalid_ids).to_numpy()
         cand_keep = ~candidate[cid].isin(invalid_ids).to_numpy()
         for name, spec in fields.items():
+            if not ref_keep.any():
+                results += [
+                    dataclasses.replace(
+                        _unverifiable(gate.name, None, "no valid matched documents"),
+                        field=name,
+                    )
+                    for gate in dataclasses.fields(spec.gates)
+                    if gate.name not in ("coverage", "nonfinite")
+                    and getattr(spec.gates, gate.name) is not None
+                ]
+                summary["fields"][name] = {"type": spec.type, "n_matched_finite": 0}
+                continue
             convert = _CONVERT[spec.type]
             # Kept rows are valid documents (never None): rows of invalid ids were dropped.
             ref_values = [

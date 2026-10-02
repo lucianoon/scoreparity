@@ -53,4 +53,4 @@ def test_schema_lists_every_gate_the_code_knows() -> None:
     from scoreparity.config import _GATE_TYPES
 
     names = SCHEMA["properties"]["gates"]["items"]["properties"]["name"]["enum"]
-    assert set(names) == set(_GATE_TYPES)
+    assert set(names) == set(_GATE_TYPES) | {"parity_gate_configured"}

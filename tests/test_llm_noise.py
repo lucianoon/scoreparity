@@ -129,7 +129,10 @@ def test_stability_gate() -> None:
         {
             **BASE,
             "columns": {"score": "label", "replica": "replica"},
-            "gates": {"stability": {"margin": 0.05}},
+            "gates": {
+                "stability": {"margin": 0.05},
+                "label_agreement": {"min": 0.99},
+            },
         }
     )
     assert sp.compare(replicated(stable), replicated(stable), cfg).passed
@@ -290,6 +293,12 @@ def test_cli_label_noise_and_replicas(tmp_path: Path) -> None:
     )
     rep_path = tmp_path / "replicas.csv"
     reps.to_csv(rep_path, index=False)
+    replica_config = tmp_path / "replica_parity.yaml"
+    replica_config.write_text(
+        "version: 1\noutput: {type: label}\ncolumns: {score: label, replica: replica}\n"
+        "gates: {label_agreement: {min: 0.99}}\n",
+        encoding="utf-8",
+    )
     args = [
         "compare",
         "--reference",
@@ -302,7 +311,9 @@ def test_cli_label_noise_and_replicas(tmp_path: Path) -> None:
         "label",
         "--replica",
         "replica",
+        "--config",
+        str(replica_config),
         "--quiet",
     ]
     assert main(args) == EXIT_PASS
-    assert main([*args[:-3], "--replica", "missing", "--quiet"]) == EXIT_ERROR
+    assert main([*args[:-1], "--replica", "missing", "--quiet"]) == EXIT_ERROR
