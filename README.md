@@ -1,5 +1,11 @@
 # scoreparity
 
+[![CI](https://github.com/lucianoon/scoreparity/actions/workflows/ci.yml/badge.svg)](https://github.com/lucianoon/scoreparity/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/lucianoon/scoreparity/actions/workflows/codeql.yml/badge.svg)](https://github.com/lucianoon/scoreparity/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/lucianoon/scoreparity)](https://github.com/lucianoon/scoreparity/releases/latest)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
 **Prove that a change to your ML system did not change what your model outputs.**
 
 Refactors, library upgrades (PyTorch, CUDA, scikit-learn), moving from CPU to GPU, quantization,
