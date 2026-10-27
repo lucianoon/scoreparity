@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- README badges for CI, CodeQL, Apache-2.0 license, latest release and Python 3.10+.
+
 ### Fixed
 
 - Comparisons without an output-equivalence gate now fail `parity_gate_configured` instead
